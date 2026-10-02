@@ -1,6 +1,6 @@
 # Environment setup is installed in the image. These are workspace conveniences.
 alias rs='source ~/.bashrc'
-alias sim='px4-sim'
+alias sim='source px4-sim'
 alias uxrce='MicroXRCEAgent udp4 -p 8888'
 alias ls='ls --color=auto'
 alias lsa='ls -A'
