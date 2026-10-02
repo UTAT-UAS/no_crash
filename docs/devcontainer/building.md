@@ -187,8 +187,20 @@ Home-directory ownership remapping can take time on
 first creation; record this in the Dev Containers log when testing with a host
 UID or GID other than 1000. The retained PX4 source and build tree lives in the
 mode-0777 `/build`, with `~/build` as a symlink, so home-directory remapping skips
-that tree. Installed userspace tools and venvs still undergo remapping. Caches and
-temporary compiler outputs are excluded from that home in the published image.
+that tree. Large userspace installations are also outside home: `.local`,
+`.venvs`, `.cargo`, `.rustup`, and `.bun` point to matching paths under `/opt/uas`.
+These links exist before installation, preserving home paths in Python
+activation scripts, executable shebangs, and native library paths. Their image
+contents are made writable for remapped users during the installation step;
+there is no recursive runtime chown of `/opt/uas`. Builder-stage copies use
+physical paths to preserve the links and permissions.
+
+Dev Containers' [UID update step](https://github.com/devcontainers/cli/blob/main/scripts/updateUID.Dockerfile)
+recursively changes ownership in the user's home. The external trees are skipped
+by that traversal. The small runtime `.cache` stays in home so pip gets cache
+ownership matching the user; BuildKit caches and temporary compiler outputs
+are excluded from the published home. `.hushlogin` disables Ubuntu's sudo hint;
+numeric hardware groups remain as passed through from the host.
 Cargo targets and ccache use `/build/cargo-target` and `/build/ccache`;
 `TMPDIR=/build/tmp` also keeps temporary compilation files outside home.
 Colcon's editable defaults in `~/.colcon/defaults.yaml` send build output and

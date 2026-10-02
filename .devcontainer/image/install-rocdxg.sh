@@ -16,3 +16,4 @@ cp "$config" "$HOME/.local/opt/rocdxg/share/rocdxg/dids.conf"
 sudo mkdir -p /usr/share/rocdxg
 sudo ln -s "$HOME/.local/opt/rocdxg/share/rocdxg/dids.conf" /usr/share/rocdxg/dids.conf
 rm -rf rocdxg.deb rocdxg-package
+make_user_storage_writable

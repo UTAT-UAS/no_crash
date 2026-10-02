@@ -38,18 +38,18 @@ USER uas
 COPY .devcontainer/image/install-tools.sh /usr/local/lib/no-crash/
 # Cache mounts create missing parents as root. Create those parents as uas.
 RUN mkdir -p "$HOME/.cargo" "$HOME/.cache"
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
-    --mount=type=cache,target=/home/uas/.cargo/registry,uid=1000,gid=1000 \
-    --mount=type=cache,target=/home/uas/.cargo/git,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+    --mount=type=cache,id=/home/uas/.cargo/registry,target=/opt/uas/.cargo/registry,uid=1000,gid=1000 \
+    --mount=type=cache,id=/home/uas/.cargo/git,target=/opt/uas/.cargo/git,uid=1000,gid=1000 \
     --mount=type=cache,id=/home/uas/.cache/cargo-target,target=/build/cargo-target,uid=1000,gid=1000,mode=0777 \
     bash /usr/local/lib/no-crash/install-tools.sh
 
 # Temporary native compilation trees never enter the final development image.
 FROM toolchain AS native-builder
 COPY .devcontainer/image/build-native.sh .devcontainer/image/package-opencv.py .devcontainer/image/environment.sh /usr/local/lib/no-crash/
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
-    --mount=type=cache,target=/home/uas/.cargo/registry,uid=1000,gid=1000 \
-    --mount=type=cache,target=/home/uas/.cargo/git,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+    --mount=type=cache,id=/home/uas/.cargo/registry,target=/opt/uas/.cargo/registry,uid=1000,gid=1000 \
+    --mount=type=cache,id=/home/uas/.cargo/git,target=/opt/uas/.cargo/git,uid=1000,gid=1000 \
     --mount=type=cache,id=/home/uas/.cache/cargo-target,target=/build/cargo-target,uid=1000,gid=1000,mode=0777 \
     --mount=type=cache,id=/home/uas/.cache/ccache,target=/build/ccache,uid=1000,gid=1000,mode=0777 \
     bash /usr/local/lib/no-crash/build-native.sh
@@ -61,11 +61,11 @@ RUN find /build/PX4-Autopilot \
 
 FROM toolchain AS common
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-COPY --from=native-builder --chown=uas:uas /home/uas/.local/opt/gstreamer/ /home/uas/.local/opt/gstreamer/
-COPY --from=native-builder --chown=uas:uas /home/uas/.local/opt/opencv/ /home/uas/.local/opt/opencv/
-COPY --from=native-builder --chown=uas:uas /home/uas/.local/opt/xrce-agent/ /home/uas/.local/opt/xrce-agent/
-COPY --from=native-builder --chown=uas:uas /home/uas/.local/share/no-crash/wheels/ /home/uas/.local/share/no-crash/wheels/
-COPY --from=native-builder --chown=uas:uas /home/uas/.venvs/px4/ /home/uas/.venvs/px4/
+COPY --from=native-builder --chown=uas:uas /opt/uas/.local/opt/gstreamer/ /opt/uas/.local/opt/gstreamer/
+COPY --from=native-builder --chown=uas:uas /opt/uas/.local/opt/opencv/ /opt/uas/.local/opt/opencv/
+COPY --from=native-builder --chown=uas:uas /opt/uas/.local/opt/xrce-agent/ /opt/uas/.local/opt/xrce-agent/
+COPY --from=native-builder --chown=uas:uas /opt/uas/.local/share/no-crash/wheels/ /opt/uas/.local/share/no-crash/wheels/
+COPY --from=native-builder --chown=uas:uas /opt/uas/.venvs/px4/ /opt/uas/.venvs/px4/
 COPY --from=native-builder --chown=uas:uas /build/PX4-Autopilot/ /build/PX4-Autopilot/
 COPY .devcontainer/image/environment.sh .devcontainer/image/install-vision.sh /usr/local/lib/no-crash/
 COPY .devcontainer/image/colcon-defaults.yaml /usr/local/lib/no-crash/
@@ -73,12 +73,14 @@ COPY --chmod=755 .devcontainer/image/entrypoint.sh /usr/local/lib/no-crash/
 COPY --chmod=755 .devcontainer/image/bin/ /usr/local/lib/no-crash/bin/
 # Keep $HOME literal in .bashrc so it expands when the user's shell starts.
 # hadolint ignore=SC2016
-RUN chmod 0777 /build/PX4-Autopilot && \
+RUN source /usr/local/lib/no-crash/helpers.sh && \
+    chmod 0777 /build/PX4-Autopilot && \
     mkdir -p "$HOME/.config" "$HOME/.colcon" && \
     cp /usr/local/lib/no-crash/colcon-defaults.yaml "$HOME/.colcon/defaults.yaml" && \
     cp /usr/local/lib/no-crash/bin/* "$HOME/.local/bin/" && \
     cp /usr/local/lib/no-crash/environment.sh "$HOME/.local/share/no-crash/environment.sh" && \
-    printf '\nsource "$HOME/.local/share/no-crash/environment.sh"\n' >> "$HOME/.bashrc"
+    printf '\nsource "$HOME/.local/share/no-crash/environment.sh"\n' >> "$HOME/.bashrc" && \
+    make_user_storage_writable
 # Ubuntu's unused users group occupies the usual NixOS host GID (100).
 # Dev Containers refuses a GID change if another group already has that ID.
 USER root
@@ -93,22 +95,22 @@ LABEL org.opencontainers.image.title="no_crash ROS Jazzy development environment
 
 FROM common AS cpu
 ENV NO_CRASH_PROFILE=cpu
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cpu
 
 FROM common AS nvidia
 ENV NO_CRASH_PROFILE=nvidia
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cu132
 
 FROM common AS nvidia-compat
 ENV NO_CRASH_PROFILE=nvidia-compat
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cu126
 
 FROM common AS amd
 ENV NO_CRASH_PROFILE=amd
-RUN --mount=type=cache,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
+RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh rocm7.14
 
 FROM amd AS amd-wsl

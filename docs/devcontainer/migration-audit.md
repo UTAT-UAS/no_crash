@@ -77,7 +77,7 @@ or the resulting OpenCV build. New image sizes must be measured after rebuilding
 | One GPU-oriented configuration; backend selected by editing the creation hook | Five profiles, each with local and prebuilt selections; no compute installs at creation |
 | Registry image or manually edited Compose image reference | Local tags reused; missing tags built by the launcher; explicit `--build` rebuilds and recreates; ignored registry overrides supported |
 | Non-root `uas`, passwordless sudo, dialout access | Preserved; host UID/GID mapping tested; numeric hardware groups passed as needed; account passwords are not cleared |
-| Writable `/build`, but some later tools installed in a remapped home | Every compilation path uses `/build`, with `~/build` as a symlink; userspace installations and venvs stay in home |
+| Writable `/build`, but some later tools installed in a remapped home | Every compilation path uses `/build`; large userspace installs use `/opt/uas`; both are reached through home symlinks |
 | ROS overlay under `uas_ws/install` | Colcon builds from the monorepo root; overlay at `~/workspace/install`, automatically sourced in interactive shells |
 | Separate creation/start hooks; repeated appends to `.bashrc` and Git safe-directory settings | Idempotent creation hook; managed shell block; safe directory added once |
 | Custom profile chosen through `.user`; personal software mixed with shared setup | Git-ignored `.devcontainer/custom-install.sh` executed as `uas`; [installer guide](custom-software.md) |

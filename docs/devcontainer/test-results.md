@@ -1,9 +1,9 @@
 # Build and runtime results
 
-The image IDs and runtime results below describe the images built before the
-final migration audit. The audit restored firmware and simulation dependencies
-in the image inputs; those additions require an image rebuild before they are
-available in the local tags. See [the migration audit](migration-audit.md).
+The image IDs and initial runtime results below describe the images built before
+the final migration audit and external installation storage changes. The
+subsequent storage tests are recorded separately below. Rebuild images to apply
+the current installation layout. See [the migration audit](migration-audit.md).
 
 Validated on 2026-10-01 on an x86_64 NixOS 26.05 host with an NVIDIA RTX 5070 Ti
 and driver 595.71.05. Builds used the pinned flake, Docker Buildx, and
@@ -75,9 +75,10 @@ external build tree. A separate container running as UID/GID `12345:12345` could
 also write to the retained PX4 tree. Upstream permission overrides are normalized
 in the builder; Docker's copied top directory is explicitly made writable.
 
-Installed home files still require remapping. First startup took approximately
-6 minutes for CPU and 4 minutes for NVIDIA after the base image build completed
-on this host. Later starts reuse the derived image. The unused Ubuntu `users`
+In that original layout, installed home files still required remapping. First
+startup took approximately 6 minutes for CPU and 4 minutes for NVIDIA after the
+base image build completed on this host. Later starts reused the derived image.
+The unused Ubuntu `users`
 group at GID 100 is removed when it has no users, allowing NixOS GID mapping.
 
 Local-image configurations contain no Compose `build:` instructions. The
@@ -99,6 +100,59 @@ directory, publication destinations and image IDs, preflight handling of
 missing images, and stopping after build or push failures. Documentation links
 and executable permissions also passed. No real builds or registry pushes ran
 as part of this helper validation.
+
+## External installation storage
+
+The current image inputs make the large installation paths in home symlinks:
+
+| Home path | Physical installation path |
+| --- | --- |
+| `~/.local` | `/opt/uas/.local` |
+| `~/.venvs` | `/opt/uas/.venvs` |
+| `~/.cargo` | `/opt/uas/.cargo` |
+| `~/.rustup` | `/opt/uas/.rustup` |
+| `~/.bun` | `/opt/uas/.bun` |
+
+Directories are mode 0777 and installed files are writable across UID changes;
+ordinary files retain no execute bits. Normalization happens during installation
+to avoid adding another copy of the installed files to final image layers.
+BuildKit cache mounts and external symlink targets are excluded. `.cache` stays
+in home so pip sees cache ownership matching its user. Home also contains
+`.hushlogin`, suppressing Ubuntu's sudo hint and its `groups` lookup.
+
+Static validation passed with 30 tests, including permission preservation,
+cache exclusion, and avoiding traversal of symlink targets. The actual storage
+initialization from `install-system.sh` also passed in a disposable pinned Jazzy
+base container, with permission normalization executed as `uas`.
+
+A disposable container using CPU image `b9889af62fa2` relocated the existing
+installed tools while retaining their home paths. After editing the account
+and recursively changing home ownership as Dev Containers does:
+
+- Home was 1.4 MB; the moved installation trees previously occupied about 4 GB.
+- The home chown completed in under 100 ms on this host. External installation
+  directory ownership stayed unchanged.
+- Runtime checks passed as UID/GID `12345:12345`: OpenCV/GStreamer capture,
+  `cv_bridge`, PyTorch/torchvision, WebRTC, ROS delivery, colcon C++ compilation,
+  Node, Bun, Rust, Meson, PX4's Empy environment, and QGC help.
+- The mapped user could write through every home link, rewrite an existing venv
+  configuration, create a fresh venv and run its pip entry point, and change
+  Rustup settings.
+- A fresh interactive login shell displayed neither the sudo hint nor the group
+  warning, with supplemental GID 303 left unnamed. Device group mappings were
+  unchanged.
+
+A second disposable container using NVIDIA image `af42ca9d9289` passed the same
+storage, mutation, shell, and tool checks with CUDA 13.2 on the RTX 5070 Ti.
+PyTorch tensor operations and torchvision NMS executed on CUDA as the remapped
+user. Home was again 1.4 MB; its ownership update took 43 ms. The successful CPU
+ownership update took 34 ms. These timings measure just the recursive home
+chown in the test containers.
+
+These checks exercise the layout with an existing compiled toolchain. They do
+not establish a full rebuild of the new Dockerfile or measure total Dev
+Containers startup time. Published images and existing containers need rebuilding
+and recreation to adopt the new storage layout.
 
 ## Coverage limits
 

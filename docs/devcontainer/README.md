@@ -79,21 +79,36 @@ See [host setup](host-setup.md) for GPU, display, and equipment access.
 /build/ccache/                   # Compiler cache
 /build/colcon/{build,log}/        # ROS compilation output and logs
 /build/tmp/                      # Temporary build files (TMPDIR)
+~/.local/ -> /opt/uas/.local/     # User installations, inventories, and wheels
+~/.venvs/ -> /opt/uas/.venvs/     # Python virtual environments
+~/.cargo/ -> /opt/uas/.cargo/     # Cargo commands and metadata
+~/.rustup/ -> /opt/uas/.rustup/   # Rust toolchains
+~/.bun/ -> /opt/uas/.bun/         # Bun and its packages
 ~/.local/bin/                    # qgc, px4-sim, no-crash-check
 ~/.local/opt/                    # Node, QGC, GStreamer, OpenCV, DDS Agent, ROCDXG
 ~/.local/share/no-crash/          # Release pins, wheels, package inventories
 ~/.venvs/vision/                 # Prepared vision tools; activation is explicit
 ~/.venvs/px4/                    # Isolated PX4 Python build requirements
 ~/.venvs/build-tools/            # Meson and wheel packaging tools
-~/.cargo/, ~/.rustup/            # User Rust toolchain
-~/.bun/                          # Bun, bunx, global tools, and package cache
+~/.cache/                        # Small runtime caches owned by the mapped user
 ```
 
 The `uas` user has passwordless sudo. Apt manages system packages and system
 Python. Custom software is compiled under `~/build` (a symlink to the mode-0777
 `/build` directory) and installed in userspace. The retained PX4 checkout and
-build files are writable by remapped container users. Dev Containers remaps home
-ownership without traversing the build symlink.
+build files are writable by remapped container users. Large installed tools and
+venvs live under `/opt/uas`, reached through home symlinks. Dev Containers remaps
+home ownership without traversing these links or the build symlink. Their image
+directories are mode 0777, and installed files are writable across UID/GID
+changes; executable permissions are preserved. Installs still run as `uas`.
+
+The small `.cache` stays in home so pip sees a cache owned by the mapped user;
+image build caches remain excluded from final images. `.hushlogin` suppresses
+Ubuntu's repeated sudo hint and its lookup of unnamed numeric hardware groups.
+
+This layout applies after rebuilding the selected image and recreating its
+container, for example `./enter.sh --profile nvidia --build`. Export changes
+kept only inside the current container before recreating it.
 
 Cargo, ccache, and temporary build files use `/build` through environment
 variables. Colcon defaults in `~/.colcon/defaults.yaml` place build output and

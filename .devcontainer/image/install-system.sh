@@ -70,5 +70,18 @@ bash /tmp/geographiclib.sh
 test -f /usr/share/GeographicLib/geoids/egm96-5.pgm
 rm /tmp/geographiclib.sh
 rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
-install -d -o uas -g uas /home/uas/build /home/uas/.local/bin \
-    /home/uas/.local/opt /home/uas/.local/share/no-crash /home/uas/.venvs
+# Keep large user installations outside Dev Containers' recursive home chown.
+# Their familiar home paths stay valid for shebangs, activation scripts, RPATHs,
+# and developer commands. This is container-local storage, not a host mount.
+install -d -m 0777 -o uas -g uas /opt/uas
+for directory in .local .venvs .cargo .rustup .bun; do
+    install -d -m 0777 -o uas -g uas "/opt/uas/$directory"
+    ln -s "/opt/uas/$directory" "/home/uas/$directory"
+done
+install -d -o uas -g uas /home/uas/build /home/uas/.cache /opt/uas/.local/bin \
+    /opt/uas/.local/opt /opt/uas/.local/share /opt/uas/.local/share/no-crash
+install -d -m 0777 -o uas -g uas /home/uas/.cache/pip \
+    /opt/uas/.cargo/registry /opt/uas/.cargo/git
+# Ubuntu's interactive sudo hint also runs groups, which warns about numeric
+# host device groups before they have an entry in the container's /etc/group.
+install -o uas -g uas -m 0644 /dev/null /home/uas/.hushlogin

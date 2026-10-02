@@ -2,6 +2,12 @@
 set -eo pipefail
 source /opt/ros/jazzy/setup.bash
 source "$HOME/.local/share/no-crash/environment.sh"
+for directory in .local .venvs .cargo .rustup .bun; do
+    test "$(readlink "$HOME/$directory")" = "/opt/uas/$directory"
+    test -w "$HOME/$directory"
+    test "$(stat -c '%a' "/opt/uas/$directory")" = 777
+done
+test -f "$HOME/.hushlogin"
 export NO_CRASH_CHECK_MODE=${1:---build}
 "$HOME/.venvs/vision/bin/python" - <<'PY'
 import importlib.metadata

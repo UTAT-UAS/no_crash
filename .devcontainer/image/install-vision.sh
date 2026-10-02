@@ -15,4 +15,5 @@ printf 'numpy==1.26.4\nopencv-python==%s+gstreamer\ntorch==%s+%s\ntorchvision==%
 "$python" -m pip install -c "$constraints" "ultralytics==$ULTRALYTICS_VERSION"
 "$python" -m pip check
 "$python" -m pip freeze > "$HOME/.local/share/no-crash/vision-python-requirements.txt"
+make_user_storage_writable
 bash /usr/local/lib/no-crash/bin/no-crash-check --build

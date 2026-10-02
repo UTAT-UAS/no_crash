@@ -51,6 +51,13 @@ dedicated venv under `~/.venvs`; avoid installing pip packages into system Pytho
 Use `bun add --global <package>` for personal JavaScript/TypeScript tooling;
 global command shims live in `~/.bun/bin`, which is already in `PATH`.
 
+The `.local`, `.venvs`, `.cargo`, `.rustup`, and `.bun` paths in home are
+symlinks into `/opt/uas`, keeping large installations outside home ownership
+remapping. Use those familiar home paths for installs and activation; do not
+replace the links with directories. The image prepares their directories and
+files for writes after UID/GID mapping. Runtime caches under `.cache` stay in
+home, where pip expects ownership by the current user.
+
 Make your installer safe to rerun: check for already-installed versions, replace
 owned configuration files, and avoid repeatedly appending lines to `.bashrc`.
 Project venvs and application dependencies remain the responsibility of each

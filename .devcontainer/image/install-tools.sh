@@ -35,3 +35,4 @@ rm QGroundControl.AppImage
 # Retain version inventories after removing downloaded archives.
 cp /usr/local/share/no-crash/versions.env "$HOME/.local/share/no-crash/versions.env"
 dpkg-query -W -f='${Package}\t${Version}\n' > "$HOME/.local/share/no-crash/apt-packages.tsv"
+make_user_storage_writable

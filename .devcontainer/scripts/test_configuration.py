@@ -335,6 +335,55 @@ if arguments[0] in ('push', 'buildx') and os.environ.get('NO_CRASH_TEST_FAIL_COM
                 self.assertEqual(events, [])
 
 
+class StoragePermissionTests(unittest.TestCase):
+    def normalize(self, root):
+        # Storage normalization needs no release pins or network access.
+        pins = root / 'versions.env'
+        pins.write_text('')
+        script = (ROOT / '.devcontainer/image/helpers.sh').read_text().replace(
+            'source /usr/local/share/no-crash/versions.env', 'source "$NO_CRASH_TEST_PINS"')
+        result = subprocess.run(['bash', '-c', script + '\nmake_user_storage_writable "$1"\n',
+                                 'storage-test', str(root)],
+                                env={**os.environ, 'NO_CRASH_TEST_PINS': str(pins)},
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_installed_artifacts_writable_without_making_data_executable(self):
+        with tempfile.TemporaryDirectory(prefix='no-crash-storage-') as directory:
+            root = Path(directory)
+            package = root / '.venvs/vision'
+            package.mkdir(parents=True)
+            executable = package / 'tool'
+            data = package / 'pyvenv.cfg'
+            executable.write_text('executable fixture')
+            data.write_text('configuration fixture')
+            executable.chmod(0o700)
+            data.chmod(0o600)
+            package.chmod(0o700)
+            self.normalize(root)
+            self.assertEqual(executable.stat().st_mode & 0o777, 0o777)
+            self.assertEqual(data.stat().st_mode & 0o777, 0o666)
+            self.assertEqual(package.stat().st_mode & 0o777, 0o777)
+
+    def test_cache_mounts_and_external_symlink_targets_are_untouched(self):
+        with tempfile.TemporaryDirectory(prefix='no-crash-storage-') as directory:
+            root = Path(directory) / 'storage'
+            cache = root / '.cargo/registry'
+            cache.mkdir(parents=True)
+            cache_file = cache / 'cached-package'
+            cache_file.write_text('cache fixture')
+            cache_file.chmod(0o600)
+            cache.chmod(0o700)
+            outside = Path(directory) / 'outside'
+            outside.write_text('external fixture')
+            outside.chmod(0o400)
+            (root / 'external-link').symlink_to(outside)
+            self.normalize(root)
+            self.assertEqual(cache.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(cache_file.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(outside.stat().st_mode & 0o777, 0o400)
+
+
 class OpenCVPackagingTests(unittest.TestCase):
     def test_extension_can_be_found_after_moving_package_into_venv(self):
         with tempfile.TemporaryDirectory(prefix='no-crash-opencv-') as directory:
@@ -382,6 +431,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn('# My settings', rc)
         self.assertEqual(rc.count('# BEGIN no_crash workspace'), 1)
         self.assertEqual((self.home / '.gitconfig').read_text().count('directory ='), 1)
+        self.assertTrue((self.home / '.hushlogin').is_file())
 
     def test_custom_script_runs_through_bash_in_workspace(self):
         (self.config / 'custom-install.sh').write_text('printf "%s\\n" "$PWD" > custom-result\n')

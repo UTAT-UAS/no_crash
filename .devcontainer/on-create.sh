@@ -2,6 +2,7 @@
 set -euo pipefail
 workspace=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$workspace"
+touch "$HOME/.hushlogin"
 
 # The managed shell block is replaced, so repeated setup does not accumulate
 # aliases or safe.directory entries. Personal additions to .bashrc are retained.

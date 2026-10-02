@@ -20,10 +20,20 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
 - Install and compile as the non-root `uas` user whenever possible. Compile in
   `~/build`; install into `~/.local`, `~/.venvs`, `~/.cargo`, `~/.rustup`, or
   `~/.bun`. `~/build` is a symlink to the mode-0777 `/build`, keeping large build
-  trees outside home ownership remapping. Cargo targets, ccache, colcon build/log
-  output, and temporary build files also live under `/build`. Retained PX4 files
+  trees outside home ownership remapping. `.local`, `.venvs`, `.cargo`, `.rustup`,
+  and `.bun` are home symlinks to their corresponding directories under
+  `/opt/uas`; create these before installing software so virtual install paths
+  remain stable. Keep image-provided installation directories mode 0777 and
+  files writable by remapped users, preserving executable bits. Normalize new
+  artifacts within their installation step; skip cache mounts and symlink
+  targets. Copy builder outputs to their physical `/opt/uas` paths. Cargo targets,
+  ccache, colcon build/log output, and temporary build files also live under
+  `/build`. Retained PX4 files
   must remain writable after UID changes. Use apt for system dependencies and
   separate Python venvs.
+- Keep the small `.cache` directory in home so pip's cache is owned by the
+  remapped user. BuildKit caches stay out of final images. Provide `.hushlogin`
+  to suppress Ubuntu's repeated sudo hint; retain numeric host device groups.
 - Use Bun for JavaScript/TypeScript package management and scripts. Commit
   `bun.lock`; use `bun install --frozen-lockfile` when consuming an existing lock.
   Node LTS is available for software that requires it.

@@ -16,6 +16,27 @@ test "$CARGO_TARGET_DIR" = /build/cargo-target
 test "$CCACHE_DIR" = /build/ccache
 test "$TMPDIR" = /build/tmp
 
+# Exercise mutation through the home links after host UID/GID mapping, including
+# an existing venv file and a fresh venv with runnable pip entry points.
+for directory in .local .venvs .cargo .rustup .bun; do
+    marker=$(mktemp "$HOME/$directory/no-crash-write-XXXXXX")
+    rm "$marker"
+done
+python3 - <<'PY'
+from pathlib import Path
+config = Path.home() / '.venvs/vision/pyvenv.cfg'
+with config.open('r+') as stream:
+    content = stream.read()
+    stream.seek(0)
+    stream.write(content)
+PY
+storage_venv=$(mktemp -d "$HOME/.venvs/no-crash-smoke-XXXXXX")
+python3 -m venv "$storage_venv"
+"$storage_venv/bin/python" -c 'import sys; assert sys.prefix != sys.base_prefix'
+"$storage_venv/bin/pip" --version
+rm -rf "$storage_venv"
+printf 'External userspace installations and venv creation passed.\n'
+
 # Compile a small CMake package using colcon's configured default build base.
 # This checks real output placement and toolchain access after UID/GID remapping.
 smoke_root=$(mktemp -d)

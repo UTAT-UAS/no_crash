@@ -77,6 +77,7 @@ python3 -m venv "$HOME/.venvs/px4"
     DONT_RUN=1 make -j "$BUILD_JOBS" px4_sitl
 )
 "$HOME/.venvs/px4/bin/python" -m pip freeze > "$HOME/build/PX4-Autopilot/no-crash-python-requirements.txt"
+make_user_storage_writable
 
 # Sources and headers of PX4 remain editable; other temporary trees are omitted
 # by the final-stage COPY instructions rather than hidden in deletion layers.
