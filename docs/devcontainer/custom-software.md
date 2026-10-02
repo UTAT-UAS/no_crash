@@ -1,33 +1,26 @@
-# Custom software on container creation
+# Personal software
 
-Create `.devcontainer/custom-install.sh` in your host checkout. This exact path
-is Git-ignored and excluded from the Docker build context. Every machine
-configuration calls it during `onCreateCommand`, after workspace initialization.
-It runs as `uas` through Bash, so the file does not need executable permission.
-Its working directory is `~/workspace`, and `$HOME` is `/home/uas`.
+Create `.devcontainer/custom-install.sh` in your host checkout. This path is
+Git-ignored and excluded from image builds. Each new container runs it through
+Bash as `uas`, with `~/workspace` as the working directory. It needs no executable
+permission. A missing script is skipped; failures appear in the Dev Containers
+log and fail the creation step.
 
-The hook runs for each new container, including after a rebuild. It does not run
-on every restart or when you edit the script. A missing script is skipped; a
-failing script makes the creation step fail and shows its output in the Dev
-Containers log. It is executed as a child process, so exports that should apply
-to later shells must be placed in a shell configuration file.
+The hook runs on creation, including recreation after a rebuild, rather than
+on restart or when the file changes. It runs as a child process, so persistent
+environment variables belong in a shell configuration file.
 
-## Example
-
-This example installs an apt-managed system tool and a personal command in
-userspace. Change it to suit your workflow:
+## Example installer
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Apt is appropriate for system-managed software.
 if ! command -v btop >/dev/null; then
     sudo apt-get update
     sudo apt-get install -y --no-install-recommends btop
 fi
 
-# ~/.local/bin is already in PATH. Overwrite our file rather than appending.
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/my-workspace" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -37,48 +30,25 @@ SCRIPT
 chmod +x "$HOME/.local/bin/my-workspace"
 ```
 
-For source builds, use `~/build/<software>` and a prefix under
-`~/.local/opt/<software>` or `~/.local`.
-`~/build` points to the mode-0777 `/build`, outside home ownership remapping.
-Keep retained sources writable if they must be edited after a UID change.
-Use `cmake -S <source> -B /build/<software>` or
-`meson setup /build/<software> <source>` for projects kept in the workspace.
-Cargo targets, compiler caches, temporary files, and colcon build/log output
-already default to `/build`; install prefixes and Python venvs remain userspace.
-Check versions and download checksums; limit parallelism with `${BUILD_JOBS:-4}`.
-For Python software, create a
-dedicated venv under `~/.venvs`; avoid installing pip packages into system Python.
-Use `bun add --global <package>` for personal JavaScript/TypeScript tooling;
-global command shims live in `~/.bun/bin`, which is already in `PATH`.
+Make installers safe to rerun: check installed versions, replace owned files,
+and avoid repeatedly appending shell settings. Check download hashes and limit
+compilation jobs with `${BUILD_JOBS:-4}`.
 
-The `.local`, `.venvs`, `.cargo`, `.rustup`, and `.bun` paths in home are
-symlinks into `/opt/uas`, keeping large installations outside home ownership
-remapping. Use those familiar home paths for installs and activation; do not
-replace the links with directories. The image prepares their directories and
-files for writes after UID/GID mapping. Runtime caches under `.cache` stay in
-home, where pip expects ownership by the current user.
+For source builds, use `/build/<software>` and install under `~/.local/opt` or
+`~/.local`. Create dedicated Python venvs under `~/.venvs`; keep pip out of system
+Python. Use `bun add --global <package>` for personal JavaScript/TypeScript tools.
+Preserve the home symlinks into `/opt/uas`; see [storage layout](README.md#workspace-and-storage).
+Project dependencies belong in each project's manifests and environments.
 
-Make your installer safe to rerun: check for already-installed versions, replace
-owned configuration files, and avoid repeatedly appending lines to `.bashrc`.
-Project venvs and application dependencies remain the responsibility of each
-project; this hook is for your personal development tools.
+## Rerun setup
 
-## Run it again
-
-Inside the container:
+Inside the container, from `~/workspace`:
 
 ```bash
-cd ~/workspace
-bash .devcontainer/custom-install.sh
+bash .devcontainer/custom-install.sh # Personal installer only
+bash .devcontainer/on-create.sh      # All creation setup, including the installer
 ```
 
-To rerun all creation setup, including the hook:
-
-```bash
-bash .devcontainer/on-create.sh
-```
-
-The script stays in the host checkout across container rebuilds. Installed
-software stays in the current container across restarts and is reinstalled by
-the hook when the container is recreated. Copying a prebuilt image to another
-machine does not copy this personal script.
+The script stays in the host checkout. Installed software survives container
+restarts and is reinstalled by the hook after recreation. Export any other
+container-local files you want to keep before recreating the container.

@@ -16,13 +16,22 @@ def run(*args):
     subprocess.run(args, cwd=ROOT, check=True)
 
 
+def source_files(root):
+    """Only container-owned inputs; exclude projects and personal installers."""
+    container = root / '.devcontainer'
+    python = sorted((container / 'scripts').glob('*.py')) + sorted((container / 'image').glob('*.py'))
+    shell = sorted((container / 'image').glob('*.sh')) + sorted((container / 'image/bin').iterdir())
+    shell += sorted((container / 'scripts').glob('*.sh'))
+    shell += sorted(p for p in container.glob('*.sh') if p.name != 'custom-install.sh')
+    return python, shell + [root / 'enter.sh']
+
+
 def main():
-    for path in ROOT.rglob('*.py'):
-        if '.git' not in path.parts:
-            ast.parse(path.read_text(), filename=str(path))
-    for path in list(ROOT.rglob('*.sh')) + list((ROOT / '.devcontainer/image/bin').iterdir()):
-        if path.name != 'custom-install.sh':
-            run('bash', '-n', str(path))
+    python_paths, shell_paths = source_files(ROOT)
+    for path in python_paths:
+        ast.parse(path.read_text(), filename=str(path))
+    for path in shell_paths:
+        run('bash', '-n', str(path))
     pins = {}
     for line in (ROOT / '.devcontainer/versions.env').read_text().splitlines():
         if line and not line.startswith('#'):
@@ -63,20 +72,26 @@ def main():
                 service = json.loads(result.stdout)['services']['uas']
                 assert not service.get('privileged') and service['user'] == 'uas'
                 assert service['volumes'][0]['source'] == str(ROOT)
-                assert 'build' not in service, 'Startup must reuse the selected image'
                 if not suffix:
                     assert service['image'] == f'no_crash:local-{profile}'
                     assert service['pull_policy'] == 'never'
+                    assert service['platform'] == 'linux/amd64'
+                    assert service['build']['context'] == str(ROOT)
+                    assert service['build']['dockerfile'] == '.devcontainer/Dockerfile'
+                    assert service['build']['target'] == profile
+                    assert service['build']['args']['BUILD_JOBS']
+                else:
+                    assert 'build' not in service, 'Prebuilt profiles must use published images'
     shellcheck = shutil.which('shellcheck')
     if shellcheck:
-        paths = list((ROOT / '.devcontainer/image').glob('*.sh')) + list((ROOT / '.devcontainer/image/bin').iterdir())
-        paths += list((ROOT / '.devcontainer/scripts').glob('*.sh'))
-        paths += list((ROOT / '.devcontainer').glob('*.sh'))
-        paths += [ROOT / 'enter.sh']
-        run(shellcheck, '--severity=warning', '--exclude=SC1091', *(str(p) for p in paths))
+        run(shellcheck, '--severity=warning', '--exclude=SC1091', *(str(p) for p in shell_paths))
+    else:
+        print('ShellCheck unavailable; skipped shell linting.', flush=True)
     hadolint = shutil.which('hadolint')
     if hadolint:
         run(hadolint, '.devcontainer/Dockerfile')
+    else:
+        print('Hadolint unavailable; skipped Dockerfile linting.', flush=True)
     run('python3', str(ROOT / '.devcontainer/scripts/test_configuration.py'))
     print('Static validation passed. No image builds or container starts were performed.')
 

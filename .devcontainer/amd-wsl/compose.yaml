@@ -2,7 +2,16 @@
   "services": {
     "uas": {
       "image": "no_crash:local-amd-wsl",
-      "pull_policy": "never"
+      "pull_policy": "never",
+      "platform": "linux/amd64",
+      "build": {
+        "context": "..",
+        "dockerfile": ".devcontainer/Dockerfile",
+        "target": "amd-wsl",
+        "args": {
+          "BUILD_JOBS": "${NO_CRASH_BUILD_JOBS:-4}"
+        }
+      }
     }
   }
 }

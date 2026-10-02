@@ -19,6 +19,9 @@ spec.loader.exec_module(host)
 spec = importlib.util.spec_from_file_location('package_opencv', ROOT / '.devcontainer/image/package-opencv.py')
 opencv = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(opencv)
+spec = importlib.util.spec_from_file_location('validate', ROOT / '.devcontainer/scripts/validate.py')
+validator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(validator)
 
 
 @contextmanager
@@ -34,7 +37,7 @@ def fake_host(wsl=False, files=(), environment=None):
             if path.startswith(('/etc/cdi/', '/var/run/cdi/')):
                 content = '{"kind":"nvidia.com/gpu"}' if path.endswith('.json') else 'kind: nvidia.com/gpu\n'
                 (cdi / Path(path).name).write_text(content)
-        exists, is_file = Path.exists, Path.is_file
+        exists, is_file, stat = Path.exists, Path.is_file, Path.stat
 
         def fake_exists(p):
             return exists(p) if p.is_relative_to(root) else str(p) in paths
@@ -42,15 +45,33 @@ def fake_host(wsl=False, files=(), environment=None):
         def fake_is_file(p):
             return is_file(p) if p.is_relative_to(root) else str(p) in paths
 
+        def fake_stat(p, *args, **kwargs):
+            if p.is_relative_to(root):
+                return stat(p, *args, **kwargs)
+            return SimpleNamespace(st_gid=44, st_mode=0o20660)
+
         with patch.object(host, 'ROOT', root), patch.object(host, 'is_wsl', return_value=wsl), \
                 patch.object(host, 'CDI_DIRECTORIES', (cdi,)), \
                 patch.object(Path, 'exists', fake_exists), patch.object(Path, 'is_file', fake_is_file), \
-                patch.object(Path, 'stat', return_value=SimpleNamespace(st_gid=44, st_mode=0o20660)), \
+                patch.object(Path, 'stat', fake_stat), \
                 patch.dict(os.environ, environment or {}, clear=True):
             yield root
 
 
 class HostConfigurationTests(unittest.TestCase):
+    def test_compose_projects_depend_only_on_profile(self):
+        with fake_host():
+            cpu = host.make_override('cpu', False, {})['name']
+            self.assertEqual(host.make_override('cpu', False, {})['name'], cpu)
+            nvidia = host.make_override('nvidia', False, {})['name']
+            prebuilt = host.make_override('cpu', True, {})['name']
+            with patch.object(host, 'ROOT', host.ROOT.parent / 'another' / host.ROOT.name):
+                other_checkout = host.make_override('cpu', False, {})['name']
+            self.assertEqual(cpu, 'no_crash_cpu')
+            self.assertEqual(nvidia, 'no_crash_nvidia')
+            self.assertEqual(prebuilt, cpu)
+            self.assertEqual(other_checkout, cpu)
+
     def test_headless_cpu_needs_no_gpu_or_display(self):
         with fake_host(files=['/dev/dri']):
             service = host.make_override('cpu', False, {}, headless=True)['services']['uas']
@@ -111,6 +132,17 @@ class HostConfigurationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '/dev/kfd'):
                 host.make_override('amd', False, {})
 
+    def test_all_mapped_graphics_nodes_contribute_groups(self):
+        nodes = [Path('/dev/dri/card1'), Path('/dev/dri/renderD129')]
+        with fake_host(files=['/dev/dri'], environment={'DISPLAY': ':0'}), \
+                patch.object(Path, 'is_dir', return_value=True), \
+                patch.object(Path, 'rglob', return_value=iter(nodes)), \
+                patch.object(Path, 'is_char_device', return_value=True), \
+                patch.object(Path, 'stat', side_effect=[SimpleNamespace(st_gid=44),
+                                                       SimpleNamespace(st_gid=303)]):
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertEqual(service['group_add'], ['303', '44'])
+
     def test_amd_wsl_uses_dxcore_without_kfd(self):
         with fake_host(wsl=True, files=['/dev/dxg', '/usr/lib/wsl/lib', '/usr/lib/wsl/lib/libdxcore.so']):
             service = host.make_override('amd-wsl', False, {})['services']['uas']
@@ -160,18 +192,13 @@ class HostConfigurationTests(unittest.TestCase):
 
 
 class LauncherTests(unittest.TestCase):
-    def launch(self, *arguments, image_exists=True):
+    def launch(self, *arguments, missing_tools=()):
         with tempfile.TemporaryDirectory(prefix='no-crash-launcher-') as directory:
             root = Path(directory)
             shutil.copy2(ROOT / 'enter.sh', root / 'enter.sh')
-            (root / '.devcontainer').mkdir()
-            shutil.copy2(ROOT / '.devcontainer/build-images.sh', root / '.devcontainer/build-images.sh')
             tools = root / 'tools'
             tools.mkdir()
             commands = root / 'commands.jsonl'
-            marker = root / 'image.present'
-            if image_exists:
-                marker.touch()
             fake = '''#!/usr/bin/env python3
 import json
 import os
@@ -182,59 +209,100 @@ name = Path(sys.argv[0]).name
 arguments = sys.argv[1:]
 with open(os.environ['NO_CRASH_TEST_COMMANDS'], 'a') as stream:
     stream.write(json.dumps([name, *arguments]) + '\\n')
-marker = Path(os.environ['NO_CRASH_TEST_IMAGE'])
-if name == 'docker':
-    if arguments[:2] == ['buildx', 'build']:
-        marker.touch()
-    elif arguments[:2] == ['image', 'inspect'] and not marker.exists():
-        sys.exit(1)
 '''
             for name in ('docker', 'devcontainer'):
+                if name in missing_tools:
+                    continue
                 path = tools / name
                 path.write_text(fake)
                 path.chmod(0o755)
-            environment = dict(os.environ, PATH=f'{tools}:{os.environ["PATH"]}',
-                               NO_CRASH_TEST_COMMANDS=str(commands),
-                               NO_CRASH_TEST_IMAGE=str(marker), NO_CRASH_BUILD_JOBS='4')
+            # Isolate PATH so a missing fake tool cannot resolve to a host tool.
+            for name in ('bash', 'dirname', 'python3'):
+                (tools / name).symlink_to(shutil.which(name))
+            environment = dict(os.environ, PATH=str(tools),
+                               NO_CRASH_TEST_COMMANDS=str(commands))
             result = subprocess.run(['bash', str(root / 'enter.sh'), *arguments],
                                     env=environment, capture_output=True, text=True)
             events = [json.loads(line) for line in commands.read_text().splitlines()] if commands.exists() else []
             return result, events
 
-    def test_existing_local_image_does_not_build(self):
-        result, events = self.launch('--profile', 'nvidia')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('Using existing local image: no_crash:local-nvidia', result.stdout)
-        self.assertFalse(any(event[:3] == ['docker', 'buildx', 'build'] for event in events))
-        self.assertEqual([event[1] for event in events if event[0] == 'devcontainer'], ['up', 'exec'])
-        self.assertNotIn('--remove-existing-container', next(event for event in events if event[:2] == ['devcontainer', 'up']))
-        self.assertEqual(events[-1][events[-1].index('--config') + 1], '.devcontainer/nvidia/devcontainer.json')
+    def test_prebuilt_is_default_for_cpu_and_selected_profile(self):
+        for arguments, profile in [(('--profile', 'cpu'), 'cpu'), (('--profile', 'nvidia'), 'nvidia')]:
+            with self.subTest(profile=profile):
+                result, events = self.launch(*arguments)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([event[:2] for event in events],
+                                 [['devcontainer', 'up'], ['devcontainer', 'exec']])
+                for event in events:
+                    self.assertEqual(event[event.index('--config') + 1],
+                                     f'.devcontainer/{profile}-prebuilt/devcontainer.json')
+                self.assertNotIn('--remove-existing-container', events[0])
 
-    def test_missing_local_image_builds_selected_target(self):
-        result, events = self.launch('--profile', 'nvidia', image_exists=False)
+    def test_local_selection_delegates_build_to_devcontainers(self):
+        result, events = self.launch('--profile', 'nvidia', '--local')
         self.assertEqual(result.returncode, 0, result.stderr)
-        builds = [event for event in events if event[:3] == ['docker', 'buildx', 'build']]
-        self.assertEqual(len(builds), 1)
-        self.assertEqual(builds[0][builds[0].index('--target') + 1], 'nvidia')
-        self.assertEqual(builds[0][builds[0].index('--tag') + 1], 'no_crash:local-nvidia')
+        self.assertEqual([event[:2] for event in events],
+                         [['devcontainer', 'up'], ['devcontainer', 'exec']])
+        for event in events:
+            self.assertEqual(event[event.index('--config') + 1], '.devcontainer/nvidia/devcontainer.json')
+        self.assertNotIn('--remove-existing-container', events[0])
 
-    def test_build_flag_explicitly_builds_existing_image(self):
-        result, events = self.launch('--profile', 'nvidia', '--build')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(sum(event[:3] == ['docker', 'buildx', 'build'] for event in events), 1)
-        self.assertIn('--remove-existing-container', next(event for event in events if event[:2] == ['devcontainer', 'up']))
+    def test_rebuild_recreates_prebuilt_and_local_containers(self):
+        for mode, suffix in [((), '-prebuilt'), (('--local',), '')]:
+            with self.subTest(mode=mode):
+                result, events = self.launch('--profile', 'nvidia', '--rebuild', *mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual([event[:2] for event in events],
+                                 [['devcontainer', 'up'], ['devcontainer', 'exec']])
+                self.assertIn('--remove-existing-container', events[0])
+                self.assertNotIn('--remove-existing-container', events[1])
+                for event in events:
+                    self.assertEqual(event[event.index('--config') + 1],
+                                     f'.devcontainer/nvidia{suffix}/devcontainer.json')
 
-    def test_registry_selection_does_not_build_or_inspect_local_image(self):
-        result, events = self.launch('--profile', 'nvidia', '--prebuilt')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(all(event[0] == 'devcontainer' for event in events))
-        self.assertEqual(events[-1][events[-1].index('--config') + 1], '.devcontainer/nvidia-prebuilt/devcontainer.json')
+    def test_retired_flags_fail_before_startup(self):
+        for flag in ('--build', '--prebuilt'):
+            with self.subTest(flag=flag):
+                result, events = self.launch(flag)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f'Unknown argument: {flag}', result.stderr)
+                self.assertEqual(events, [])
 
-    def test_conflicting_image_modes_fail_before_startup(self):
-        result, events = self.launch('--prebuilt', '--build')
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('cannot be combined', result.stderr)
+    def test_help_describes_image_selection_and_recreation(self):
+        expected, _ = self.launch('--help')
+        for arguments in [(), ('--help',), ('-h',)]:
+            with self.subTest(arguments=arguments):
+                result, events = self.launch(*arguments, missing_tools=('docker', 'devcontainer'))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, expected.stdout)
+                self.assertIn('--local', result.stdout)
+                self.assertIn('--rebuild', result.stdout)
+                self.assertIn('No arguments prints this help', result.stdout)
+                self.assertEqual(events, [])
+
+    def test_missing_cli_fails_before_startup(self):
+        result, events = self.launch('--profile', 'cpu', missing_tools=('devcontainer',))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Missing host tool: devcontainer', result.stderr)
         self.assertEqual(events, [])
+
+
+class ValidationScopeTests(unittest.TestCase):
+    def test_project_environments_and_personal_installers_are_excluded(self):
+        with tempfile.TemporaryDirectory(prefix='no-crash-validation-') as directory:
+            root = Path(directory)
+            paths = ['.devcontainer/scripts/check.py', '.devcontainer/image/setup.sh',
+                     '.devcontainer/image/bin/tool', '.devcontainer/custom-install.sh',
+                     'flight_visualizer/backend/.venv/dependency.py', 'hardware_manager/tool.sh',
+                     'enter.sh']
+            for name in paths:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            python, shell = validator.source_files(root)
+            self.assertEqual(python, [root / '.devcontainer/scripts/check.py'])
+            self.assertEqual(set(shell), {root / '.devcontainer/image/setup.sh',
+                                          root / '.devcontainer/image/bin/tool', root / 'enter.sh'})
 
 
 class ImageHelperTests(unittest.TestCase):

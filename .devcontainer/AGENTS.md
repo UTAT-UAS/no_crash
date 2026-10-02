@@ -52,10 +52,13 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   Change that generator and regenerate configurations instead of editing the
   generated files directly.
 - Profiles are `cpu`, `nvidia`, `nvidia-compat`, `amd`, and `amd-wsl`, each with
-  local-image and prebuilt selections. Startup configurations must not include
-  Compose `build:` sections; build through `.devcontainer/build-images.sh` or
-  `enter.sh --build`.
-  The launcher reuses existing local tags and builds only missing ones by default.
+  local-image and prebuilt selections. Local configurations declare Compose
+  builds so Dev Containers builds the selected target automatically. Prebuilt
+  configurations must not include Compose `build:` sections.
+  The launcher shows help without arguments and otherwise defaults to prebuilt
+  images; `--local` selects source builds and
+  `--rebuild` removes the existing profile container before setup. Developers
+  can also build images manually with `.devcontainer/build-images.sh`.
   Keep hardware selection out of the creation hook.
 - `.devcontainer/scripts/prepare-host.py` generates ignored host overrides.
   Keep GPU/device access scoped and privileged mode disabled by default.
@@ -67,21 +70,20 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   `flake.lock`. Container dependencies belong in the image installation scripts.
 - Keep setup, image, and host documentation in `docs/devcontainer/`. The root
   README describes the monorepo and links to these guides. Update documentation
-  when behavior or commands change. Record migration differences in
-  `docs/devcontainer/migration-audit.md` and keep runtime reports tied to the
-  actual image IDs tested.
+  when behavior or commands change. Keep documentation focused on the current
+  setup. When reporting runtime checks, identify the actual images tested.
 
 ## Validation
 
 On the NixOS host, use the pinned development shell:
 
 ```bash
-nix develop path:.
+nix develop
 python3 .devcontainer/scripts/generate-configs.py # After changing the generator
 python3 .devcontainer/scripts/validate.py
 ```
 
-Use `nix develop` once the flake files are tracked by Git. Validation checks
+Validation checks
 syntax, release pins, generated configurations, merged Compose models,
 ShellCheck, Hadolint, host setup, lifecycle hooks, and OpenCV packaging paths.
 It does not build images or start containers.

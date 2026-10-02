@@ -1,173 +1,105 @@
 # Development container
 
-An Ubuntu 24.04 / ROS 2 Jazzy development environment for the no_crash monorepo.
-It includes PX4 SITL, Gazebo Harmonic, QGroundControl, MAVROS,
-Micro XRCE-DDS Agent, GStreamer with WebRTC, and OpenCV with GStreamer capture.
+The Ubuntu 24.04 / ROS 2 Jazzy image includes PX4 SITL, Gazebo Harmonic,
+QGroundControl, MAVROS, Micro XRCE-DDS Agent, GStreamer with WebRTC, and
+OpenCV with GStreamer capture. Start with the [README quickstart](../../README.md#quickstart).
+Run repository scripts from the repository root.
 
-Run repository scripts from the repository root. For project workflows, see
-[the development guide](../development/README.md).
+## Profiles
 
-## Choose a machine configuration
+Each profile has a **local image** and **prebuilt** configuration, targeting
+`linux/amd64`:
 
-Open this repository in VS Code with the Dev Containers extension, then use
-**Dev Containers: Reopen in Container** and select a configuration. Each profile
-has a **local image** and **prebuilt** choice:
-
-| Profile | Compute backend | Host |
+| Profile | PyTorch backend | Host |
 | --- | --- | --- |
-| `cpu` | CPU PyTorch; host graphics can still accelerate Gazebo | Linux or WSL2 |
-| `nvidia` | CUDA 13.2 PyTorch | Linux or WSL2 with supported NVIDIA drivers |
-| `nvidia-compat` | CUDA 12.6 PyTorch | Linux or WSL2; older supported GPUs/drivers |
-| `amd` | ROCm 7.14 PyTorch | Native Linux with supported AMD hardware |
-| `amd-wsl` | ROCm 7.14 plus ROCDXG 1.2.2 | WSL2 with supported AMD hardware/drivers |
+| `cpu` | CPU | Linux or WSL2; host graphics can still accelerate Gazebo |
+| `nvidia` | CUDA 13.2 | Linux or WSL2 with compatible NVIDIA hardware and drivers |
+| `nvidia-compat` | CUDA 12.6 | Linux or WSL2; additional older supported GPUs/drivers |
+| `amd` | ROCm 7.14 | Native Linux with supported AMD hardware |
+| `amd-wsl` | ROCm 7.14 plus ROCDXG 1.2.2 | WSL2 with supported AMD hardware and Windows drivers |
 
-The configurations target `linux/amd64`. The default terminal entry command
-selects the local CPU image, building it only if the tag is missing:
+See [host setup](host-setup.md) before choosing a GPU profile. The CPU profile
+needs no compute GPU. Setup detects displays and devices and generates ignored
+host overrides; it does not install drivers.
 
-```bash
-./enter.sh
-./enter.sh --profile nvidia
-./enter.sh --profile nvidia --build # Build the image and recreate the container
-./enter.sh --profile amd-wsl --prebuilt
-```
+Each profile has a Compose project name such as `no_crash_nvidia`, shared across
+checkouts and local/prebuilt selections. Use `--rebuild` when changing its
+checkout or image selection so the container's mount and image match.
 
-Existing local images are reused without invoking a source build. To update one,
-run `./.devcontainer/build-images.sh <profile>` or pass `--build` to the launcher, which also
-recreates the container and reruns its creation hooks. Export any changes kept
-only inside the container before recreating it. When using
-VS Code's local-image configurations, build the selected image first. Registry
-profiles use `--prebuilt`. Dev Containers may still build a cached derived image
-to map `uas` to your host UID/GID; this remaps installed home files and skips the
-external `/build` tree.
+`./enter.sh` shows help. `./enter.sh --profile <profile>` selects a prebuilt image.
+Add `--local` to build
+from source through Dev Containers; VS Code's **local image** choices also build
+automatically. Add `--rebuild` to remove the existing profile container, rerun
+creation hooks, and rebuild local configurations using Docker's cache.
+Export container-local changes before recreation. For manual image builds and
+published image selection, see [the build guide](building.md).
 
-Host requirements: Docker Engine with Compose 2.24 or newer, Bash, Python 3,
-and either the VS Code extension or the Dev Container CLI. On Windows, open the
-repository through **Remote - WSL**, with Docker Engine running in that WSL
-distribution. Keep the checkout on the Linux filesystem. This is particularly
-important for AMD WSL: the Docker daemon must see `/dev/dxg` and the DXCore
-libraries in that distribution. Docker Desktop's separate daemon is not the
-supported AMD WSL configuration.
+## Workspace and storage
 
-### NixOS host tools
+| Path inside the container | Purpose |
+| --- | --- |
+| `~/workspace` | Bind-mounted monorepo; keep project source here |
+| `~/workspace/install` | ROS install overlay, sourced by interactive shells when present |
+| `~/build` → `/build` | Native compilation, Cargo targets, ccache, temporary files, and colcon build/log output |
+| `/build/PX4-Autopilot` | Pinned, editable PX4 checkout and prepared SITL build |
+| `~/.local` → `/opt/uas/.local` | Installed commands, native libraries, wheels, and version inventories |
+| `~/.venvs` → `/opt/uas/.venvs` | Prepared `vision`, `px4`, and `build-tools` Python environments |
+| `~/.cargo`, `~/.rustup`, `~/.bun` | Home symlinks to installations under `/opt/uas` |
 
-The pinned `flake.nix` and `flake.lock` supply Bash, Git, Python, the Docker CLI
-with Compose and Buildx, the Dev Container CLI, ShellCheck, Hadolint, and uv:
+The `uas` user has passwordless sudo and is mapped to the host UID/GID.
+Large installations and builds live outside home to keep ownership remapping
+fast. Those image directories are writable by remapped users; preserve their
+home symlinks when installing tools. Apt manages system packages and system Python.
 
-```bash
-nix develop path:.
-python3 .devcontainer/scripts/validate.py
-```
+Container-local files survive restarts. Recreation restores the image's files;
+keep ongoing code in the mounted workspace and export other changes first.
+Create a branch before editing the detached PX4 checkout. Personal tools can be
+reinstalled with the [custom installation hook](custom-software.md).
 
-Use `nix develop` once the flake files are tracked by Git. The `path:.` form also
-includes files in a new, uncommitted checkout. Docker Engine must already be
-enabled on the host and accessible to your user. The flake provides client tools;
-the Ubuntu container's dependencies are installed by its Dockerfile.
+## Daily use
 
-Run `code .` from this shell to make its tools available to VS Code, or run
-`./enter.sh` in the shell when ready to build or use a published image.
-
-No drivers are installed or changed on the host by the setup scripts.
-See [host setup](host-setup.md) for GPU, display, and equipment access.
-
-## Workspace
-
-```text
-~/workspace/                     # Monorepo, bind-mounted from the host
-~/build/ -> /build/              # Shared writable builds, skipped by UID remapping
-/build/PX4-Autopilot/            # Editable pinned source and prepared SITL build
-/build/cargo-target/             # Cargo compilation output
-/build/ccache/                   # Compiler cache
-/build/colcon/{build,log}/        # ROS compilation output and logs
-/build/tmp/                      # Temporary build files (TMPDIR)
-~/.local/ -> /opt/uas/.local/     # User installations, inventories, and wheels
-~/.venvs/ -> /opt/uas/.venvs/     # Python virtual environments
-~/.cargo/ -> /opt/uas/.cargo/     # Cargo commands and metadata
-~/.rustup/ -> /opt/uas/.rustup/   # Rust toolchains
-~/.bun/ -> /opt/uas/.bun/         # Bun and its packages
-~/.local/bin/                    # qgc, px4-sim, no-crash-check
-~/.local/opt/                    # Node, QGC, GStreamer, OpenCV, DDS Agent, ROCDXG
-~/.local/share/no-crash/          # Release pins, wheels, package inventories
-~/.venvs/vision/                 # Prepared vision tools; activation is explicit
-~/.venvs/px4/                    # Isolated PX4 Python build requirements
-~/.venvs/build-tools/            # Meson and wheel packaging tools
-~/.cache/                        # Small runtime caches owned by the mapped user
-```
-
-The `uas` user has passwordless sudo. Apt manages system packages and system
-Python. Custom software is compiled under `~/build` (a symlink to the mode-0777
-`/build` directory) and installed in userspace. The retained PX4 checkout and
-build files are writable by remapped container users. Large installed tools and
-venvs live under `/opt/uas`, reached through home symlinks. Dev Containers remaps
-home ownership without traversing these links or the build symlink. Their image
-directories are mode 0777, and installed files are writable across UID/GID
-changes; executable permissions are preserved. Installs still run as `uas`.
-
-The small `.cache` stays in home so pip sees a cache owned by the mapped user;
-image build caches remain excluded from final images. `.hushlogin` suppresses
-Ubuntu's repeated sudo hint and its lookup of unnamed numeric hardware groups.
-
-This layout applies after rebuilding the selected image and recreating its
-container, for example `./enter.sh --profile nvidia --build`. Export changes
-kept only inside the current container before recreating it.
-
-Cargo, ccache, and temporary build files use `/build` through environment
-variables. Colcon defaults in `~/.colcon/defaults.yaml` place build output and
-logs there as well; its install prefix remains `~/workspace/install` so the
-workspace overlay can be sourced normally. CMake and Meson custom projects
-should likewise use build directories under `/build`.
-No project dependency manifests are installed automatically.
+Build ROS packages from the monorepo root, keeping the overlay at `install/`:
 
 ```bash
 cd ~/workspace
-colcon build --symlink-install
+colcon build --base-paths uas_ws/src --symlink-install
 ```
 
-Once ROS packages are added to the monorepo, build them from its root. Interactive
-shells source `~/workspace/install/local_setup.bash` when it exists.
+Projects own and install their dependencies; container hooks do not discover
+manifests. Use Bun and committed `bun.lock` files for JavaScript/TypeScript.
+Create a dedicated venv for each Python project; ROS-dependent venvs can use
+system Python with `--system-site-packages`. See [project workflows](../development/README.md).
 
-Use Bun for JavaScript/TypeScript dependencies and scripts. Commit each
-project's `bun.lock` and use `bun install --frozen-lockfile` for reproducible
-installs. Node LTS remains available for tools that require Node.
-
-System Python remains the default. For the supplied vision tools:
+Activate the supplied vision tools explicitly:
 
 ```bash
 source ~/.venvs/vision/bin/activate
 python -c 'import torch, cv2; print(torch.__version__, cv2.__version__)'
 ```
 
-Future projects should create and manage their own venvs. ROS projects that need
-apt-provided modules such as `rclpy` can use the system Python interpreter to
-create a venv with `--system-site-packages`. The image's prepared OpenCV wheel is
-available under `~/.local/share/no-crash/wheels/`; it relies on the native libraries
-installed in this image and is not portable to arbitrary machines. Keep NumPy
-1.26.4 when combining this wheel with Jazzy's apt-managed `cv_bridge`.
+The prepared OpenCV wheel is under `~/.local/share/no-crash/wheels` and depends
+on this image's native libraries. Keep NumPy 1.26.4 when using it with Jazzy's
+apt-managed `cv_bridge`.
 
-Use `px4-sim`, `qgc`, and
-`MicroXRCEAgent udp4 -p 8888`. `px4-sim` activates only the PX4 venv, preserving
-Empy 3.x for its build. ROS builds continue to use Jazzy's system dependencies.
+For [PX4/Gazebo simulation](https://docs.px4.io/main/en/sim_gazebo_gz/), prepare
+the shell with `sim` (an alias for `source px4-sim`), then launch the model:
 
-The container's writable home survives restarts. Recreating a container restores
-its image-provided home; keep ongoing code changes in the mounted workspace or
-export them before rebuilding. Create a development branch before editing the
-detached, pinned PX4 checkout.
+```bash
+sim
+make px4_sitl gz_x500
+```
 
-## Customize and build
+This activates PX4's isolated Python environment, including Empy 3.x, and changes
+to its checkout. Run `MicroXRCEAgent udp4 -p 8888` and `qgc` in separate terminals.
+ROS builds use Jazzy's system dependencies.
 
-See [the build and runtime validation report](test-results.md) for measured
-image sizes, ownership-remapping checks, and CPU/NVIDIA test coverage.
+## Maintenance
 
-- [Container agent guide](../../.devcontainer/AGENTS.md): image conventions and validation commands.
-- [Migration audit](migration-audit.md): feature comparison and final dependency corrections.
-- [Custom software installer](custom-software.md): a Git-ignored script run
-  as `uas` on container creation.
-- [Build and manually publish images](building.md): local build targets,
-  versioned tags, validation, and image-size checks.
-- [Host setup](host-setup.md): graphics, GPU runtimes, USB, and networking.
+- [Host setup](host-setup.md): Docker, GPU drivers, displays, and equipment.
+- [Custom software](custom-software.md): personal creation hook.
+- [Build and publish](building.md): local images, release pins, and validation.
+- [Container agent guide](../../.devcontainer/AGENTS.md): implementation conventions.
 
-Release pins and download checksums are in `.devcontainer/versions.env`. The
-Jazzy base image is pinned by SHA-256 in the Dockerfile. System packages follow
-the supported Noble, Jazzy, and Gazebo repositories; builds record the versions
-actually installed. No GitHub Actions build or publishing workflow is provided.
-
-Man pages are not restored with `unminimize`; use online documentation.
+Release pins and download hashes are in `.devcontainer/versions.env`; the
+Dockerfile pins the Jazzy base by SHA-256. Apt packages follow supported Noble,
+Jazzy, and Gazebo repositories, with installed versions recorded in the image.

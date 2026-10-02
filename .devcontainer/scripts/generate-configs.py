@@ -27,7 +27,16 @@ def expected_files():
                 'onCreateCommand': ['bash', '/home/uas/workspace/.devcontainer/on-create.sh'],
                 'customizations': {'vscode': {'extensions': EXTENSIONS}},
             }
-            service = {'image': f'no_crash:local-{profile}', 'pull_policy': 'never'}
+            service = {
+                'image': f'no_crash:local-{profile}', 'pull_policy': 'never',
+                'platform': 'linux/amd64',
+                'build': {
+                    # Compose resolves paths relative to the first file,
+                    # .devcontainer/compose.yaml, rather than this override.
+                    'context': '..', 'dockerfile': '.devcontainer/Dockerfile',
+                    'target': profile, 'args': {'BUILD_JOBS': '${NO_CRASH_BUILD_JOBS:-4}'},
+                },
+            }
             if prebuilt:
                 service = {
                     'image': f'ghcr.io/utat-uas/no_crash:2026-10-01-{profile}',

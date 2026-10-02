@@ -119,14 +119,6 @@ def make_override(profile, prebuilt, options, headless=False):
         # The image includes its own ROCDXG library and dids.conf.
         service['shm_size'] = '8gb'
 
-    if not host_wsl:
-        group_ids = set()
-        for device in ('/dev/dri/renderD128', '/dev/dri/card0', '/dev/kfd'):
-            if Path(device).exists():
-                group_ids.add(str(Path(device).stat().st_gid))
-        if group_ids:
-            service['group_add'] = sorted(group_ids)
-
     hardware = options.get('hardware_devices', [])
     if not isinstance(hardware, list) or not all(isinstance(p, str) and p.startswith('/dev/') for p in hardware):
         raise ValueError('hardware_devices must be a list of absolute /dev paths')
@@ -134,12 +126,20 @@ def make_override(profile, prebuilt, options, headless=False):
         if not Path(device).exists():
             raise ValueError(f'Hardware device is missing: {device}')
         service['devices'].append(f'{device}:{device}')
-        if not host_wsl:
-            service.setdefault('group_add', []).append(str(Path(device).stat().st_gid))
-            if Path(device).is_dir():
-                service['group_add'].extend(str(p.stat().st_gid) for p in Path(device).rglob('*') if p.is_char_device())
-    if 'group_add' in service:
-        service['group_add'] = sorted(set(service['group_add']))
+    if not host_wsl:
+        # Derive groups from the devices actually passed to Docker, including
+        # every graphics card/render node on hosts with multiple GPUs.
+        group_ids = set()
+        for mapping in service['devices']:
+            if not mapping.startswith('/dev/'):
+                continue  # CDI manages its own device access.
+            device = Path(mapping.split(':', 1)[0])
+            if device.is_dir():
+                group_ids.update(str(p.stat().st_gid) for p in device.rglob('*') if p.is_char_device())
+            else:
+                group_ids.add(str(device.stat().st_gid))
+        if group_ids:
+            service['group_add'] = sorted(group_ids)
     host_network = options.get('host_network', False)
     if not isinstance(host_network, bool):
         raise ValueError('host_network must be true or false')
@@ -147,7 +147,11 @@ def make_override(profile, prebuilt, options, headless=False):
         if host_wsl:
             raise ValueError('The host_network override is supported only on native Linux')
         service['network_mode'] = 'host'
-    return {'services': {'uas': {k: v for k, v in service.items() if v != [] and v != {}}}}
+    # Share one Compose project per profile across checkouts and image sources.
+    return {
+        'name': f'no_crash_{profile}',
+        'services': {'uas': {k: v for k, v in service.items() if v != [] and v != {}}},
+    }
 
 
 def main():
