@@ -1,0 +1,10 @@
+# Only image instructions and shared build inputs belong in the build context.
+**
+!.devcontainer/
+!.devcontainer/Dockerfile
+!.devcontainer/versions.env
+!.devcontainer/image/
+!.devcontainer/image/**
+.devcontainer/custom-install.sh
+.devcontainer/runtime/**
+.git/**

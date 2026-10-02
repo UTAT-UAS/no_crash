@@ -1,0 +1,8 @@
+"":
+  log-base: /build/colcon/log
+build:
+  build-base: /build/colcon/build
+test:
+  build-base: /build/colcon/build
+test-result:
+  test-result-base: /build/colcon/build

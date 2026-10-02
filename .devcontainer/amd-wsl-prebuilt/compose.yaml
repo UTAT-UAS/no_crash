@@ -1,0 +1,8 @@
+{
+  "services": {
+    "uas": {
+      "image": "ghcr.io/utat-uas/no_crash:2026-10-01-amd-wsl",
+      "pull_policy": "missing"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# Environment setup is installed in the image. These are workspace conveniences.
+alias rs='source ~/.bashrc'
+alias sim='px4-sim'
+alias uxrce='MicroXRCEAgent udp4 -p 8888'
+alias ls='ls --color=auto'
+alias lsa='ls -A'
+alias lsl='ls -lh --time-style="+%Y-%m-%d %H:%M:%S"'
+alias lsla='ls -lhA --time-style="+%Y-%m-%d %H:%M:%S"'
+alias grep='grep --color=auto'
+alias diff='diff --color=auto'
+alias bd='cd "$OLDPWD"'
+alias ..='cd ..'
+alias ...='cd ../..'

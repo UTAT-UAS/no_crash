@@ -1,0 +1,8 @@
+{
+  "services": {
+    "uas": {
+      "image": "no_crash:local-amd",
+      "pull_policy": "never"
+    }
+  }
+}

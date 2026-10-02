@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# QGC bundles its own multimedia libraries. Keep its plugins isolated from
+# the development GStreamer installation, preserving SDL joystick settings.
+unset GST_PLUGIN_PATH GST_PLUGIN_PATH_1_0 GST_PLUGIN_SYSTEM_PATH GST_PLUGIN_SYSTEM_PATH_1_0
+unset GST_PLUGIN_SCANNER GST_PLUGIN_SCANNER_1_0
+export LD_LIBRARY_PATH=
+if [[ -d /usr/lib/wsl/lib ]]; then export LD_LIBRARY_PATH=/usr/lib/wsl/lib; fi
+exec "$HOME/.local/opt/qgc/AppRun" "$@"

@@ -1,0 +1,16 @@
+.devcontainer/custom-install.sh
+.devcontainer/runtime/
+.devcontainer/runtime-options.json
+.devcontainer/images.json
+__pycache__/
+*.py[cod]
+.venv/
+.env
+build/
+install/
+log/
+.cache/
+node_modules/
+*.px4
+*.bin
+*.log

@@ -1,0 +1,14 @@
+services:
+  uas:
+    user: uas
+    hostname: ros-dev
+    init: true
+    stdin_open: true
+    tty: true
+    working_dir: /home/uas/workspace
+    shm_size: 2gb
+    volumes:
+      - type: bind
+        source: ..
+        target: /home/uas/workspace
+    command: [sleep, infinity]

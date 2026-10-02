@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -eo pipefail
+source "$HOME/.local/share/no-crash/environment.sh"
+source "$HOME/.venvs/px4/bin/activate"
+cd "$HOME/build/PX4-Autopilot"
+echo "simulator environment active"
