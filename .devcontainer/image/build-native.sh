@@ -65,18 +65,21 @@ cmake --install Micro-XRCE-DDS-Agent/build
 
 # The retained checkout lives in /build, outside home-directory UID remapping.
 # Keep sources and generated build files editable after a host UID change.
-umask 000
-checkout "$PX4_URL" "$PX4_REVISION" PX4-Autopilot
-git -C PX4-Autopilot submodule update --init --recursive --depth 1
-python3 -m venv "$HOME/.venvs/px4"
-"$HOME/.venvs/px4/bin/python" -m pip install \
-    -r PX4-Autopilot/Tools/setup/requirements.txt 'empy==3.3.4'
 (
-    cd PX4-Autopilot
-    source "$HOME/.venvs/px4/bin/activate"
-    DONT_RUN=1 make -j "$BUILD_JOBS" px4_sitl
+    umask 0000
+    checkout "$PX4_URL" "$PX4_REVISION" PX4-Autopilot
+    git -C PX4-Autopilot submodule update --init --recursive --depth 1
+    python3 -m venv "$HOME/.venvs/px4"
+    "$HOME/.venvs/px4/bin/python" -m pip install \
+        -r PX4-Autopilot/Tools/setup/requirements.txt 'empy==3.3.4'
+    (
+        cd PX4-Autopilot
+        source "$HOME/.venvs/px4/bin/activate"
+        DONT_RUN=1 make -j "$BUILD_JOBS" px4_sitl
+    )
+    "$HOME/.venvs/px4/bin/python" -m pip freeze > "$HOME/build/PX4-Autopilot/no-crash-python-requirements.txt"
 )
-"$HOME/.venvs/px4/bin/python" -m pip freeze > "$HOME/build/PX4-Autopilot/no-crash-python-requirements.txt"
+# The permissive build umask ends with the subshell above.
 make_user_storage_writable
 
 # Sources and headers of PX4 remain editable; other temporary trees are omitted

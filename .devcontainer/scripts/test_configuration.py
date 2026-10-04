@@ -404,6 +404,25 @@ if arguments[0] in ('push', 'buildx') and os.environ.get('NO_CRASH_TEST_FAIL_COM
 
 
 class StoragePermissionTests(unittest.TestCase):
+    def test_shell_environment_resets_inherited_umask_for_new_files(self):
+        with tempfile.TemporaryDirectory(prefix='no-crash-umask-') as directory:
+            root = Path(directory)
+            script = '''umask 0000
+source "$1"
+: > "$2/file"
+mkdir "$2/directory"
+umask
+'''
+            result = subprocess.run(
+                ['bash', '-c', script, 'umask-test',
+                 str(ROOT / '.devcontainer/image/environment.sh'), str(root)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), '0022')
+            self.assertEqual((root / 'file').stat().st_mode & 0o777, 0o644)
+            self.assertEqual((root / 'directory').stat().st_mode & 0o777, 0o755)
+
     def normalize(self, root):
         # Storage normalization needs no release pins or network access.
         pins = root / 'versions.env'
@@ -510,6 +529,23 @@ class LifecycleTests(unittest.TestCase):
     def test_custom_script_failure_is_visible(self):
         (self.config / 'custom-install.sh').write_text('exit 23\n')
         self.assertEqual(self.run_hook().returncode, 23)
+
+    def test_creation_and_future_shells_reset_inherited_umask(self):
+        (self.config / 'custom-install.sh').write_text(': > custom-result\n')
+        result = subprocess.run(
+            ['bash', '-c', 'umask 0000; exec bash "$1"', 'umask-test',
+             str(self.config / 'on-create.sh')],
+            cwd=self.workspace, env=self.environment, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / '.hushlogin').stat().st_mode & 0o777, 0o644)
+        self.assertEqual((self.workspace / 'custom-result').stat().st_mode & 0o777, 0o644)
+        result = subprocess.run(
+            ['bash', '-c', 'umask 0000; source "$HOME/.bashrc"; umask'],
+            env=self.environment, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '0022')
 
 
 if __name__ == '__main__':

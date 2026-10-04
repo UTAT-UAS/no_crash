@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Safe to source repeatedly; system Python remains the default interpreter.
+# Installed image artifacts have explicit permissions; new files use defaults.
+umask 0022
 export GST_PREFIX="$HOME/.local/opt/gstreamer"
 export OPENCV_PREFIX="$HOME/.local/opt/opencv"
 export XRCE_PREFIX="$HOME/.local/opt/xrce-agent"

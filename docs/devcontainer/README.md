@@ -51,6 +51,11 @@ Large installations and builds live outside home to keep ownership remapping
 fast. Those image directories are writable by remapped users; preserve their
 home symlinks when installing tools. Apt manages system packages and system Python.
 
+Container shells and creation setup use `umask 0022`: new ordinary files are
+`0644` and directories are `0755`. The permissive `0000` umask is confined to
+the PX4 image-build subshell. Explicit permissions on image-provided storage
+keep existing installations writable after UID/GID remapping.
+
 Container-local files survive restarts. Recreation restores the image's files;
 keep ongoing code in the mounted workspace and export other changes first.
 Create a branch before editing the detached PX4 checkout. Personal tools can be

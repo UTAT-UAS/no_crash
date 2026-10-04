@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 0022
 workspace=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$workspace"
 touch "$HOME/.hushlogin"
@@ -13,6 +14,7 @@ import re
 rc = Path.home() / '.bashrc'
 content = rc.read_text() if rc.exists() else ''
 block = '''# BEGIN no_crash workspace
+umask 0022
 if [ -f "$HOME/workspace/.devcontainer/bashrc_aliases" ]; then
     source "$HOME/workspace/.devcontainer/bashrc_aliases"
 fi
