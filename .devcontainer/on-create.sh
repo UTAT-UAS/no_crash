@@ -28,7 +28,7 @@ if ! git config --global --get-all safe.directory | grep -Fxq "$workspace"; then
 fi
 
 # Local customization is deliberately never baked into shared images.
-custom_script="$workspace/.devcontainer/custom-install.sh"
+custom_script="${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh"
 if [[ -f $custom_script ]]; then
     printf 'Running local custom software installer: %s\n' "$custom_script"
     bash "$custom_script"

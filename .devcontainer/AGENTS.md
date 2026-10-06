@@ -39,8 +39,10 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   Node LTS is available for software that requires it.
 - Project dependencies are managed by their projects. Container lifecycle hooks
   do not discover or install application dependency manifests.
-- Keep personal installs in the Git-ignored `.devcontainer/custom-install.sh`.
-  It runs through Bash as `uas` on container creation. See
+- Keep personal installs in `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh`
+  on the host. The host initializer mounts the existing `no_crash` directory
+  read-only at `/home/uas/.config/no_crash`. The script runs through Bash as
+  `uas` on container creation. See
   [the customization guide](../docs/devcontainer/custom-software.md).
 - Keep build caches, downloaded archives, and temporary native compilation
   trees out of final images. Preserve development headers and editable PX4

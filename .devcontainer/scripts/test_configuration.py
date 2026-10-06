@@ -59,6 +59,39 @@ def fake_host(wsl=False, files=(), environment=None):
 
 
 class HostConfigurationTests(unittest.TestCase):
+    def test_personal_config_uses_host_xdg_directory_for_all_profiles(self):
+        for profile in host.PROFILES:
+            with fake_host(wsl=profile == 'amd-wsl', files=[
+                '/dev/kfd', '/dev/dri', '/dev/dxg', '/usr/lib/wsl/lib',
+                '/usr/lib/wsl/lib/libdxcore.so',
+            ]) as root:
+                config_home = root / 'custom config'
+                personal_config = config_home / 'no_crash'
+                personal_config.mkdir(parents=True)
+                with patch.dict(os.environ, {'XDG_CONFIG_HOME': str(config_home)}):
+                    for prebuilt in (False, True):
+                        with self.subTest(profile=profile, prebuilt=prebuilt):
+                            service = host.make_override(profile, prebuilt, {})['services']['uas']
+                            self.assertIn(host.bind(personal_config, '/home/uas/.config/no_crash'),
+                                          service['volumes'])
+
+    def test_personal_config_defaults_to_home_for_unset_or_empty_xdg(self):
+        with fake_host() as root:
+            personal_config = root / '.config/no_crash'
+            personal_config.mkdir(parents=True)
+            for environment in ({'HOME': str(root)}, {'HOME': str(root), 'XDG_CONFIG_HOME': ''}):
+                with self.subTest(environment=environment), patch.dict(os.environ, environment, clear=True):
+                    service = host.make_override('cpu', False, {})['services']['uas']
+                    self.assertEqual(service['volumes'], [
+                        host.bind(personal_config, '/home/uas/.config/no_crash'),
+                    ])
+
+    def test_missing_personal_config_is_skipped_without_creating_it(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertNotIn('volumes', service)
+            self.assertFalse((root / 'no_crash').exists())
+
     def test_compose_projects_depend_only_on_profile(self):
         with fake_host():
             cpu = host.make_override('cpu', False, {})['name']
@@ -499,9 +532,12 @@ class LifecycleTests(unittest.TestCase):
         self.workspace = self.home / 'workspace'
         self.config = self.workspace / '.devcontainer'
         self.config.mkdir(parents=True)
+        self.personal_config = self.home / '.config/no_crash'
+        self.personal_config.mkdir(parents=True)
         shutil.copy(ROOT / '.devcontainer/on-create.sh', self.config / 'on-create.sh')
         (self.home / '.bashrc').write_text('# My settings\n')
         self.environment = {**os.environ, 'HOME': str(self.home), 'GIT_CONFIG_GLOBAL': str(self.home / '.gitconfig')}
+        self.environment.pop('XDG_CONFIG_HOME', None)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -521,17 +557,39 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue((self.home / '.hushlogin').is_file())
 
     def test_custom_script_runs_through_bash_in_workspace(self):
-        (self.config / 'custom-install.sh').write_text('printf "%s\\n" "$PWD" > custom-result\n')
+        (self.personal_config / 'custom-install.sh').write_text('printf "%s\\n" "$PWD" > custom-result\n')
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.workspace / 'custom-result').read_text().strip(), str(self.workspace))
 
     def test_custom_script_failure_is_visible(self):
-        (self.config / 'custom-install.sh').write_text('exit 23\n')
+        (self.personal_config / 'custom-install.sh').write_text('exit 23\n')
         self.assertEqual(self.run_hook().returncode, 23)
 
+    def test_custom_script_uses_explicit_xdg_config_home(self):
+        config_home = self.home / 'custom config'
+        (config_home / 'no_crash').mkdir(parents=True)
+        (config_home / 'no_crash/custom-install.sh').write_text(': > custom-result\n')
+        (self.personal_config / 'custom-install.sh').write_text('exit 23\n')
+        self.environment['XDG_CONFIG_HOME'] = str(config_home)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.workspace / 'custom-result').is_file())
+
+    def test_empty_xdg_config_home_uses_default(self):
+        self.environment['XDG_CONFIG_HOME'] = ''
+        (self.personal_config / 'custom-install.sh').write_text(': > custom-result\n')
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.workspace / 'custom-result').is_file())
+
+    def test_legacy_workspace_installer_is_skipped(self):
+        (self.config / 'custom-install.sh').write_text('exit 23\n')
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_creation_and_future_shells_reset_inherited_umask(self):
-        (self.config / 'custom-install.sh').write_text(': > custom-result\n')
+        (self.personal_config / 'custom-install.sh').write_text(': > custom-result\n')
         result = subprocess.run(
             ['bash', '-c', 'umask 0000; exec bash "$1"', 'umask-test',
              str(self.config / 'on-create.sh')],

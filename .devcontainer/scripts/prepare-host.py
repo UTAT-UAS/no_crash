@@ -53,6 +53,10 @@ def make_override(profile, prebuilt, options, headless=False):
         raise ValueError('Use amd-wsl for AMD GPU compute on WSL2')
 
     service = {'environment': {}, 'volumes': [], 'devices': []}
+    config_home = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
+    personal_config = config_home / 'no_crash'
+    if personal_config.is_dir():
+        service['volumes'].append(bind(personal_config.resolve(), '/home/uas/.config/no_crash'))
     if prebuilt:
         images_file = ROOT / '.devcontainer/images.json'
         images = json.loads(images_file.read_text()) if images_file.exists() else {}

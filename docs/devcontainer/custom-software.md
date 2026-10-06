@@ -1,10 +1,21 @@
 # Personal software
 
-Create `.devcontainer/custom-install.sh` in your host checkout. This path is
-Git-ignored and excluded from image builds. Each new container runs it through
-Bash as `uas`, with `~/workspace` as the working directory. It needs no executable
-permission. A missing script is skipped; failures appear in the Dev Containers
-log and fail the creation step.
+Create `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh` on your host.
+This uses `$XDG_CONFIG_HOME` when set and nonempty, otherwise `~/.config`:
+
+```bash
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/no_crash"
+$EDITOR "${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh"
+```
+
+The host initializer mounts the existing `no_crash` configuration directory
+read-only at `/home/uas/.config/no_crash` in the container. Each new container
+runs its `custom-install.sh` through Bash as `uas`, with `~/workspace` as the
+working directory. It needs no executable permission. A missing directory or
+script is skipped; failures appear in the Dev Containers log and fail the
+creation step. Personal configuration stays outside the checkout and image
+builds. The old `.devcontainer/custom-install.sh` location is no longer used;
+move any existing installer to the host configuration directory.
 
 The hook runs on creation, including recreation after a rebuild, rather than
 on restart or when the file changes. It runs as a child process, so persistent
@@ -45,10 +56,13 @@ Project dependencies belong in each project's manifests and environments.
 Inside the container, from `~/workspace`:
 
 ```bash
-bash .devcontainer/custom-install.sh # Personal installer only
-bash .devcontainer/on-create.sh      # All creation setup, including the installer
+bash "${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh" # Personal installer only
+bash .devcontainer/on-create.sh # All creation setup, including the installer
 ```
 
-The script stays in the host checkout. Installed software survives container
-restarts and is reinstalled by the hook after recreation. Export any other
-container-local files you want to keep before recreating the container.
+Edits to the host installer are visible through the directory mount. If you
+create the configuration directory after the container was created, recreate
+the container with `./enter.sh --profile <profile> --rebuild` to add the mount.
+Installed software survives container restarts and is reinstalled by the hook
+after recreation. Export any other container-local files you want to keep
+before recreating the container.
