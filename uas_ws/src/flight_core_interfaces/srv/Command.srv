@@ -1,0 +1,12 @@
+# Discrete vehicle command from the lease holder.
+uint8 ARM = 0
+uint8 DISARM = 1
+uint8 OFFBOARD = 2
+uint8 HOLD = 3 # hold the current position
+uint8 LAND = 4 # switch to PX4 land mode
+
+uint32 lease_id
+uint8 command
+---
+bool success # validated and sent to PX4; confirm the effect from PX4 topics
+string message

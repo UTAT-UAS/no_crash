@@ -1,0 +1,5 @@
+# Give up control. The vehicle keeps holding its current target.
+uint32 lease_id
+---
+bool success
+string message

@@ -1,0 +1,6 @@
+# Request exclusive control of the vehicle. Fails while another client holds it.
+string client_name
+---
+bool success
+string message
+uint32 lease_id # pass with every Command and Goto request

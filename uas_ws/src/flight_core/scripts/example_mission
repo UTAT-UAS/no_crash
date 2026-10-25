@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""Take off, fly a 5 m square at 5 m altitude, and land."""
+
+from flight_core.client import Drone
+
+
+def main():
+    with Drone('example_mission') as drone:
+        drone.takeoff(5.0)
+        x, y, z = drone.position
+        for dx, dy in [(5, 0), (5, 5), (0, 5), (0, 0)]:
+            print(f'Flying to ({x + dx:.1f}, {y + dy:.1f}, {z:.1f})')
+            drone.goto(x + dx, y + dy, z)
+        drone.land()
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,5 @@
+# Clear the current lease regardless of holder and hold position.
+# Manual recovery when a client exits without releasing control.
+---
+bool success
+string message

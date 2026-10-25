@@ -66,8 +66,9 @@ export changes stored elsewhere before recreating the container.
 - [`flight_visualizer/backend/`](flight_visualizer/backend/README.md): Python backend with its own environment and dependencies.
 - [`hardware_manager/`](hardware_manager/README.md): Bash and Python hardware scripts.
 
-These directories currently contain README placeholders. Each project will
-declare its dependencies when implementation begins.
+The ROS workspace contains `flight_core`, a Python and C++ package for the PX4
+offboard flight controller. The other projects currently contain README
+placeholders. Each project declares its own dependencies as implementation begins.
 
 ## Guides
 
