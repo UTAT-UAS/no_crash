@@ -20,6 +20,12 @@ Start with `cpu`, or choose `nvidia`, `nvidia-compat`, `amd` (Linux), or
 `amd-wsl` (Windows/WSL2) after setting up the host GPU driver.
 The [profile table](docs/devcontainer/README.md#profiles) describes each backend.
 
+Install submodules with:
+
+```sh
+git submodule update --init --recursive
+```
+
 ### Open in VS Code
 
 1. Open the repository:
