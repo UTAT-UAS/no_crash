@@ -1,8 +1,8 @@
 # Developing in the monorepo
 
-The project directories contain README placeholders. The commands below apply
-as packages, manifests, and scripts are added. Each project owns its dependencies;
-install them explicitly when working on that project.
+The ROS workspace contains the mixed Python and C++ `flight_core` package;
+the other project directories contain README placeholders. Each project owns
+its dependencies; install them explicitly when working on that project.
 
 For environment setup and included tools, see
 [the development container guide](../devcontainer/README.md).
@@ -20,8 +20,9 @@ source install/local_setup.bash
 
 Keep the overlay at the root `install/`. The
 [ROS workspace README](../../uas_ws/README.md) describes that project's layout.
-If using PX4 ROS messages, add `px4_msgs` matching the selected PX4 release as
-part of the monorepo and declare it as a dependency of consumers.
+`px4_msgs` is a Git submodule pinned to the PX4 release in use (v1.17.0); run
+`git submodule update --init` after cloning and declare it as a dependency of
+consumers.
 
 ## Flight visualizer
 
