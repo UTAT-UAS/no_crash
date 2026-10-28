@@ -1,4 +1,5 @@
-# Fly to a position using PX4's onboard goto smoothing. Requires offboard mode.
+# Set the GotoSetpoint streamed in GOTO state. Accepted outside offboard; it is
+# saved and published once offboard.
 uint32 lease_id
 float32[3] position # [m] NED local frame
 float32 heading # [rad] from North; NaN to leave heading uncontrolled

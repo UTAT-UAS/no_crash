@@ -19,7 +19,9 @@ source install/local_setup.bash
 ```
 
 Keep the overlay at the root `install/`. The
-[ROS workspace README](../../uas_ws/README.md) describes that project's layout.
+[ROS workspace README](../../uas_ws/README.md) describes that project's layout
+and the `uas_ws/scripts/sitl` helper for simulation tests, for example
+`uas_ws/scripts/sitl run -- ros2 run flight_core example_mission`.
 `px4_msgs` is a Git submodule pinned to the PX4 release in use (v1.17.0); run
 `git submodule update --init` after cloning and declare it as a dependency of
 consumers.

@@ -1,0 +1,12 @@
+# Set the TrajectorySetpoint streamed in TRAJECTORY state. Accepted outside
+# offboard; it is saved and published once offboard. NaN leaves a field
+# uncontrolled. Each axis needs at least one finite field and x/y come in pairs.
+uint32 lease_id
+float32[3] position # [m] NED local frame
+float32[3] velocity # [m/s]
+float32[3] acceleration # [m/s^2]
+float32 yaw # [rad] from North
+float32 yawspeed # [rad/s]
+---
+bool success
+string message

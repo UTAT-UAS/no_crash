@@ -1,0 +1,13 @@
+# Set flight_core's internal state, which selects the setpoint it streams.
+# The offboard heartbeat is always published; setpoints only while PX4 is in
+# offboard mode.
+uint8 HOLD = 0 # default; hold the position and heading captured on entry and
+               # whenever the vehicle becomes armed in offboard (GotoSetpoint)
+uint8 GOTO = 1 # stream the latest Goto request; starts at the current position
+uint8 TRAJECTORY = 2 # stream the latest Trajectory request; starts at the current position
+
+uint32 lease_id
+uint8 state
+---
+bool success
+string message

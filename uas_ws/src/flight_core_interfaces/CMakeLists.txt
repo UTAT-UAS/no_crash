@@ -5,11 +5,14 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/CoreState.msg"
   "srv/AcquireControl.srv"
   "srv/ReleaseControl.srv"
   "srv/ResetControl.srv"
-  "srv/Command.srv"
+  "srv/CoreCommand.srv"
+  "srv/CoreVehicleCommand.srv"
   "srv/Goto.srv"
+  "srv/Trajectory.srv"
 )
 
 ament_export_dependencies(rosidl_default_runtime)
