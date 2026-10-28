@@ -22,6 +22,16 @@
     "bash",
     "/home/uas/workspace/.devcontainer/on-create.sh"
   ],
+  "portsAttributes": {
+    "5173": {
+      "label": "Flight visualizer frontend",
+      "onAutoForward": "ignore"
+    },
+    "8000": {
+      "label": "Flight visualizer backend",
+      "onAutoForward": "ignore"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [

@@ -36,13 +36,17 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   to suppress Ubuntu's repeated sudo hint; retain numeric host device groups.
 - Use Bun for JavaScript/TypeScript package management and scripts. Commit
   `bun.lock`; use `bun install --frozen-lockfile` when consuming an existing lock.
+  Use uv (pinned in `versions.env`, installed to `~/.local/bin`) for Python
+  projects that do not need ROS; commit `uv.lock`.
   Node LTS is available for software that requires it.
 - Project dependencies are managed by their projects. Container lifecycle hooks
   do not discover or install application dependency manifests.
 - Keep personal installs in `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh`
   on the host. The host initializer mounts the existing `no_crash` directory
   read-only at `/home/uas/.config/no_crash`. The script runs through Bash as
-  `uas` on container creation. See
+  `uas` on container creation. Host option files (`runtime-options.json`,
+  `images.json`) live in the same host directory; `prepare-host.py` rejects
+  the retired `.devcontainer/` locations. See
   [the customization guide](../docs/devcontainer/custom-software.md).
 - Keep build caches, downloaded archives, and temporary native compilation
   trees out of final images. Preserve development headers and editable PX4
@@ -64,7 +68,11 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   Keep hardware selection out of the creation hook.
 - `.devcontainer/scripts/prepare-host.py` generates ignored host overrides.
   Keep GPU/device access scoped and privileged mode disabled by default.
-- Port forwarding is currently unconfigured; add ports when requested.
+- `prepare-host.py` publishes the flight visualizer ports (`PUBLISHED_PORTS`)
+  on host loopback only, IPv4 and, on native Linux with IPv6, `::1`; never on
+  all interfaces. Skip them with `host_network`. The generator marks them
+  `onAutoForward: ignore` so VS Code does not forward them too. Add ports
+  when requested.
 - Images are built locally and pushed manually. Do not add hosted image-build
   or publishing workflows. `.devcontainer/push-images.sh` publishes local images
   to GHCR only when invoked; keep credentials managed by Docker login.

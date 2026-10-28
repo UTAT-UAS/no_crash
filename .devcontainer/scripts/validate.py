@@ -79,7 +79,7 @@ def main():
                     assert service['build']['context'] == str(ROOT)
                     assert service['build']['dockerfile'] == '.devcontainer/Dockerfile'
                     assert service['build']['target'] == profile
-                    assert service['build']['args']['BUILD_JOBS']
+                    assert 'BUILD_JOBS' in service['build']['args']
                 else:
                     assert 'build' not in service, 'Prebuilt profiles must use published images'
     shellcheck = shutil.which('shellcheck')

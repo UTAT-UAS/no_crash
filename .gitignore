@@ -1,6 +1,4 @@
 .devcontainer/runtime/
-.devcontainer/runtime-options.json
-.devcontainer/images.json
 __pycache__/
 *.py[cod]
 .venv/

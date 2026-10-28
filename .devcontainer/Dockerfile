@@ -4,7 +4,8 @@ FROM osrf/ros:jazzy-desktop-full@sha256:ae7ad3ac243da1dfd8bd402a2fa08e149ffbf7a3
 ARG TARGETARCH
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG BUILD_JOBS=4
+# Empty uses every available core; see helpers.sh.
+ARG BUILD_JOBS=
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY .devcontainer/image/helpers.sh .devcontainer/image/install-system.sh /usr/local/lib/no-crash/
@@ -20,8 +21,6 @@ ENV HOME=/home/uas \
     PYTHONNOUSERSITE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     BUILD_JOBS=${BUILD_JOBS} \
-    CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS} \
-    CARGO_BUILD_JOBS=${BUILD_JOBS} \
     PATH=/home/uas/.local/bin:/home/uas/.bun/bin:/home/uas/.local/opt/node/bin:/home/uas/.cargo/bin:${PATH}
 USER uas
 WORKDIR /home/uas/build

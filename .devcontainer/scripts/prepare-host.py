@@ -13,6 +13,8 @@ import socket
 PROFILES = ('cpu', 'nvidia', 'nvidia-compat', 'amd', 'amd-wsl')
 ROOT = Path(__file__).resolve().parents[2]
 CDI_DIRECTORIES = (Path('/etc/cdi'), Path('/var/run/cdi'))
+# Flight visualizer frontend (Vite) and backend, published on host loopback.
+PUBLISHED_PORTS = (5173, 8000)
 
 
 def nvidia_cdi_available():
@@ -31,6 +33,33 @@ def nvidia_cdi_available():
             except (OSError, ValueError):
                 continue
     return False
+
+
+def personal_config_dir():
+    """Host directory for personal setup: custom-install.sh and option files."""
+    config_home = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
+    return config_home / 'no_crash'
+
+
+def read_personal_json(name):
+    """Load an optional JSON object from the personal configuration directory."""
+    retired = ROOT / '.devcontainer' / name
+    path = personal_config_dir() / name
+    if retired.exists():
+        raise ValueError(f'.devcontainer/{name} is no longer read; move it to {path}')
+    content = json.loads(path.read_text()) if path.exists() else {}
+    if not isinstance(content, dict):
+        raise ValueError(f'{name} must contain an object')
+    return content
+
+
+def has_ipv6_loopback():
+    # Rows are: address, interface index, prefix, scope, flags, interface name.
+    try:
+        rows = Path('/proc/net/if_inet6').read_text().splitlines()
+    except OSError:
+        return False
+    return any(row.split()[:1] == ['0' * 31 + '1'] for row in rows)
 
 
 def bind(source, target, read_only=True):
@@ -53,19 +82,14 @@ def make_override(profile, prebuilt, options, headless=False):
         raise ValueError('Use amd-wsl for AMD GPU compute on WSL2')
 
     service = {'environment': {}, 'volumes': [], 'devices': []}
-    config_home = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
-    personal_config = config_home / 'no_crash'
+    personal_config = personal_config_dir()
     if personal_config.is_dir():
         service['volumes'].append(bind(personal_config.resolve(), '/home/uas/.config/no_crash'))
     if prebuilt:
-        images_file = ROOT / '.devcontainer/images.json'
-        images = json.loads(images_file.read_text()) if images_file.exists() else {}
-        if not isinstance(images, dict):
-            raise ValueError('images.json must contain an object')
-        image = images.get(profile)
+        image = read_personal_json('images.json').get(profile)
         if image is None:
             prefix = os.environ.get('NO_CRASH_IMAGE_PREFIX', 'ghcr.io/utat-uas/no_crash')
-            tag = os.environ.get('NO_CRASH_IMAGE_TAG', '2026-10-01')
+            tag = os.environ.get('NO_CRASH_IMAGE_TAG', '2026-10-27')
             image = f'{prefix}:{tag}-{profile}'
         if not isinstance(image, str) or not image.strip():
             raise ValueError('images.json references must be nonempty strings')
@@ -151,6 +175,15 @@ def make_override(profile, prebuilt, options, headless=False):
         if host_wsl:
             raise ValueError('The host_network override is supported only on native Linux')
         service['network_mode'] = 'host'
+    else:
+        # Loopback only, so nothing is exposed to the network. Browsers resolve
+        # localhost to ::1 first, and Firefox WebSockets do not fall back to
+        # IPv4, so publish on IPv6 loopback too where the host has it.
+        host_ips = ['127.0.0.1'] + (['::1'] if not host_wsl and has_ipv6_loopback() else [])
+        service['ports'] = [
+            {'target': port, 'published': str(port), 'host_ip': ip, 'protocol': 'tcp'}
+            for port in PUBLISHED_PORTS for ip in host_ips
+        ]
     # Share one Compose project per profile across checkouts and image sources.
     return {
         'name': f'no_crash_{profile}',
@@ -165,11 +198,8 @@ def main():
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    options_path = ROOT / '.devcontainer/runtime-options.json'
     try:
-        options = json.loads(options_path.read_text()) if options_path.exists() else {}
-        if not isinstance(options, dict):
-            raise ValueError('runtime-options.json must contain an object')
+        options = read_personal_json('runtime-options.json')
         content = json.dumps(make_override(args.profile, args.prebuilt, options, args.headless), indent=2) + '\n'
     except (OSError, ValueError) as error:
         parser.exit(2, f'Host configuration: {error}\n')

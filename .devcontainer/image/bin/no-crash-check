@@ -47,6 +47,7 @@ MicroXRCEAgent udp4 --help >/dev/null
 node --version
 bun --version
 bunx --version
+uv --version
 rustc --version
 test -x "$HOME/.local/opt/qgc/AppRun"
 test -x "$HOME/build/PX4-Autopilot/build/px4_sitl_default/bin/px4"

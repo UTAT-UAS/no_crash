@@ -1,7 +1,7 @@
 {
   "services": {
     "uas": {
-      "image": "ghcr.io/utat-uas/no_crash:2026-10-01-amd",
+      "image": "ghcr.io/utat-uas/no_crash:2026-10-27-amd",
       "pull_policy": "missing"
     }
   }

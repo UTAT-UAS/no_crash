@@ -12,6 +12,10 @@ unzip -q bun.zip -d bun-archive
 install -Dm 0755 bun-archive/bun-linux-x64/bun "$BUN_INSTALL/bin/bun"
 ln -s bun "$BUN_INSTALL/bin/bunx"
 rm -rf bun.zip bun-archive
+download "$UV_URL" "$UV_SHA256" uv.tar.gz
+tar -xzf uv.tar.gz --strip-components=1 -C "$HOME/.local/bin" \
+    uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx
+rm uv.tar.gz
 
 download "$RUSTUP_URL" "$RUSTUP_SHA256" rustup-init
 chmod +x rustup-init

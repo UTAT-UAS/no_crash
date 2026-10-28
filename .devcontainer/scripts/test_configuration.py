@@ -25,7 +25,7 @@ spec.loader.exec_module(validator)
 
 
 @contextmanager
-def fake_host(wsl=False, files=(), environment=None):
+def fake_host(wsl=False, files=(), environment=None, ipv6=False):
     """Model real host device layouts without depending on this machine's GPU."""
     paths = set(files)
     with tempfile.TemporaryDirectory(prefix='no-crash-host-') as directory:
@@ -51,6 +51,7 @@ def fake_host(wsl=False, files=(), environment=None):
             return SimpleNamespace(st_gid=44, st_mode=0o20660)
 
         with patch.object(host, 'ROOT', root), patch.object(host, 'is_wsl', return_value=wsl), \
+                patch.object(host, 'has_ipv6_loopback', return_value=ipv6), \
                 patch.object(host, 'CDI_DIRECTORIES', (cdi,)), \
                 patch.object(Path, 'exists', fake_exists), patch.object(Path, 'is_file', fake_is_file), \
                 patch.object(Path, 'stat', fake_stat), \
@@ -203,12 +204,45 @@ class HostConfigurationTests(unittest.TestCase):
             self.assertIn('/dev/dxg:/dev/dxg', service['devices'])
 
     def test_prebuilt_references_can_be_digest_pinned(self):
-        with fake_host() as root:
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
             image = 'ghcr.io/example/no_crash@sha256:' + 'a' * 64
-            (root / '.devcontainer/images.json').write_text(json.dumps({'cpu': image}))
+            (root / 'no_crash').mkdir()
+            (root / 'no_crash/images.json').write_text(json.dumps({'cpu': image}))
             service = host.make_override('cpu', True, {})['services']['uas']
             self.assertEqual(service['image'], image)
             self.assertNotIn('build', service)
+
+    def test_option_files_are_read_from_personal_config(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            self.assertEqual(host.read_personal_json('runtime-options.json'), {})
+            (root / 'no_crash').mkdir()
+            (root / 'no_crash/runtime-options.json').write_text('{"nvidia_mode": "cdi"}')
+            self.assertEqual(host.read_personal_json('runtime-options.json'), {'nvidia_mode': 'cdi'})
+            (root / 'no_crash/images.json').write_text('[]')
+            with self.assertRaisesRegex(ValueError, 'must contain an object'):
+                host.read_personal_json('images.json')
+
+    def test_retired_option_file_locations_fail_with_new_path(self):
+        for name in ('runtime-options.json', 'images.json'):
+            with self.subTest(name=name), fake_host() as root, \
+                    patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+                (root / '.devcontainer' / name).write_text('{}')
+                with self.assertRaisesRegex(ValueError, str(root / 'no_crash' / name)):
+                    host.read_personal_json(name)
+
+    def test_visualizer_ports_are_published_on_loopback_only(self):
+        def published(service):
+            return sorted((p['host_ip'], p['published']) for p in service['ports'])
+        with fake_host():
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertEqual(published(service), [('127.0.0.1', '5173'), ('127.0.0.1', '8000')])
+        with fake_host(ipv6=True):
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertEqual(published(service), [
+                ('127.0.0.1', '5173'), ('127.0.0.1', '8000'), ('::1', '5173'), ('::1', '8000')])
+        with fake_host(wsl=True, ipv6=True):
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertNotIn('::1', [ip for ip, _ in published(service)])
 
     def test_hardware_and_host_network_are_explicit(self):
         with fake_host(files=['/dev/ttyACM0']):
@@ -216,6 +250,7 @@ class HostConfigurationTests(unittest.TestCase):
                 'hardware_devices': ['/dev/ttyACM0'], 'host_network': True,
             })['services']['uas']
             self.assertEqual(service['network_mode'], 'host')
+            self.assertNotIn('ports', service)
             self.assertEqual(service['devices'], ['/dev/ttyACM0:/dev/ttyACM0'])
             with self.assertRaises(ValueError):
                 host.make_override('cpu', False, {'hardware_devices': ['/tmp/not-a-device']})
