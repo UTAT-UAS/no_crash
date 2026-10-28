@@ -4,7 +4,7 @@
   <name>flight_core_interfaces</name>
   <version>0.0.1</version>
   <description>Service definitions for commanding the flight_core offboard node.</description>
-  <maintainer email="benlow999@gmail.com">Benjamin Low</maintainer>
+  <maintainer email="contact@utat.ca">UTAT UAS</maintainer>
   <license>GPL-3.0-only</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

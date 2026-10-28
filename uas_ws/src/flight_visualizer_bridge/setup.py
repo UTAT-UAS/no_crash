@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='Benjamin Low',
-    maintainer_email='benlow999@gmail.com',
+    maintainer='UTAT UAS',
+    maintainer_email='contact@utat.ca',
     description='Streams drone state to the flight visualizer over TCP and '
                 'forwards its commands to flight_core.',
     license='GPL-3.0-only',
