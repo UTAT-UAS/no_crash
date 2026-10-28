@@ -4,7 +4,7 @@
   <name>flight_visualizer_bridge</name>
   <version>0.0.1</version>
   <description>Streams drone state to the flight visualizer over TCP and forwards its commands to flight_core.</description>
-  <maintainer email="benlow999@gmail.com">Benjamin Low</maintainer>
+  <maintainer email="contact@utat.ca">UTAT UAS</maintainer>
   <license>GPL-3.0-only</license>
 
   <exec_depend>rclpy</exec_depend>
