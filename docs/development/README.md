@@ -1,7 +1,8 @@
 # Developing in the monorepo
 
-The ROS workspace contains the mixed Python and C++ `flight_core` package;
-the other project directories contain README placeholders. Each project owns
+The ROS workspace contains the mixed Python and C++ `flight_core` package and
+`flight_visualizer_bridge`; the flight visualizer has a FastAPI backend and a
+SvelteKit frontend; `hardware_manager` is a placeholder. Each project owns
 its dependencies; install them explicitly when working on that project.
 
 For environment setup and included tools, see
@@ -28,11 +29,11 @@ consumers.
 
 ## Flight visualizer
 
-The [frontend](../../flight_visualizer/frontend/README.md) uses Svelte and Bun.
-Once its manifest, scripts, and lockfile exist:
+The [frontend](../../flight_visualizer/frontend/flight_visualizer/README.md) is a SvelteKit app
+in `flight_visualizer/frontend/flight_visualizer`, managed with Bun:
 
 ```bash
-cd flight_visualizer/frontend
+cd flight_visualizer/frontend/flight_visualizer
 bun install --frozen-lockfile
 bun run dev
 ```
@@ -40,11 +41,10 @@ bun run dev
 Commit `bun.lock` alongside dependency changes. Use Node LTS for tools that
 require Node.
 
-The [Python backend](../../flight_visualizer/backend/README.md) manages a
-separate environment and dependency manifest. Create a dedicated venv using
-the system Python interpreter, then install the declared dependencies. Use
-`--system-site-packages` when creating a ROS-dependent venv that needs `rclpy`
-or other apt-provided Python modules. No backend framework has been selected.
+The [Python backend](../../flight_visualizer/backend/README.md) is a FastAPI
+app managed with uv (`pyproject.toml`, `uv.lock`); it does not need ROS. It
+connects to `flight_visualizer_bridge` on the drone. The container publishes
+ports 5173 and 8000 on the host's `localhost`.
 
 ## Hardware manager
 

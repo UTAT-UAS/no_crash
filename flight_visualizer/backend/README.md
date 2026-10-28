@@ -1,15 +1,16 @@
 # Flight visualizer backend
 
-Placeholder for the Python backend. The container supplies Python 3.12,
-venv support, pip, Python development headers, and native build tools.
-
-Create a dedicated environment when implementation begins:
+FastAPI app that connects to
+[`flight_visualizer_bridge`](../../uas_ws/src/flight_visualizer_bridge/README.md)
+on the drone and relays it to the dashboard: state goes to browsers, commands
+go to the bridge. `GET /api/state` returns the link status and latest state.
 
 ```bash
-python3 -m venv ~/.venvs/flight-visualizer-backend
-source ~/.venvs/flight-visualizer-backend/bin/activate
+cd ~/workspace/flight_visualizer/backend
+uv run uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Declare backend dependencies in this project's dependency manifest. Choose
-`--system-site-packages` when creating the venv if it needs apt-managed ROS
-modules such as `rclpy`. No backend framework has been selected yet.
+| Variable | Default |
+|---|---|
+| `BRIDGE_HOST` | `127.0.0.1` |
+| `BRIDGE_PORT` | `8765` |

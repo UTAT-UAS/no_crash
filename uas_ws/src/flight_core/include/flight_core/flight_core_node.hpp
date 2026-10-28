@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -71,6 +72,8 @@ private:
   /// if the core is streaming them.
   void send_after_heartbeats(uint32_t command, float param1 = 0.0f, float param2 = 0.0f);
   bool heartbeats_established() const;
+  /// Position setpoint of the current state; NaN when unset or uncontrolled.
+  std::array<float, 3> target_position() const;
   uint64_t timestamp_us() const;
 
   ControlLease lease_;

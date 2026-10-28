@@ -21,7 +21,8 @@ listed in [flight_core_interfaces](../flight_core_interfaces/README.md).
 | `GOTO` | The latest `goto` target; starts at the current position |
 | `TRAJECTORY` | The latest `trajectory` setpoint; starts at the current position |
 
-The offboard heartbeat is always published, so offboard can be selected from
+`/flight_core/out/core_state` reports the state, the lease holder and the
+current state's target position. The offboard heartbeat is always published, so offboard can be selected from
 the RC at any time and the vehicle holds where it is. Setpoints are published
 only while PX4 is in offboard. A `goto` or `trajectory` target saved before
 offboard is flown as soon as offboard engages.
@@ -55,6 +56,7 @@ with Drone('survey') as drone:     # acquires control; on exit holds (if flying)
 
 | Call | Effect |
 |---|---|
+| `reacquire()` | Reset the lease, taking control from any holder (the core goes `HOLD`), then acquire it |
 | `arm()`, `disarm()` | Command and wait for PX4 to confirm |
 | `offboard_mode()` | Switch to offboard and wait |
 | `position_mode()` | Switch to PX4 position mode and wait; the core goes `HOLD` |
