@@ -20,8 +20,9 @@ remains at `install/`. Avoid introducing nested repository imports.
 - Use Bun for JavaScript/TypeScript dependencies and scripts. Commit `bun.lock`
   and use `bun install --frozen-lockfile` with an existing lockfile.
 - Manage Python dependencies in project manifests and dedicated virtual
-  environments. Use the system Python interpreter with `--system-site-packages`
-  when a ROS project needs apt-managed modules such as `rclpy`.
+  environments. Use uv and commit `uv.lock` for projects that do not need ROS.
+  Use the system Python interpreter with `--system-site-packages` when a ROS
+  project needs apt-managed modules such as `rclpy`.
 - Declare ROS dependencies in `package.xml` and the project's build files.
   Keep `px4_msgs` compatible with the PX4 release used by the project.
 - Project dependencies are installed explicitly by developers; container

@@ -6,6 +6,8 @@ ROS 2 Jazzy packages live under `src/`.
   Python `Drone` client library.
 - [`flight_core_interfaces`](src/flight_core_interfaces/README.md): services used to
   command `flight_core`.
+- [`flight_visualizer_bridge`](src/flight_visualizer_bridge/README.md): on-drone
+  TCP link to the [flight visualizer](../flight_visualizer/backend/README.md).
 - `px4_msgs`: Git submodule pinned to PX4 v1.17.0 messages.
 - [`scripts/sitl`](scripts/sitl): start, stop and script PX4 SITL test sessions.
 
@@ -36,10 +38,11 @@ build. Build the workspace first; run it from anywhere.
 | `sitl run [start options] -- <command>` | Start, run the command, stop; exit with the command's status |
 | `sitl px4 <module> [args]` | PX4 shell command, e.g. `sitl px4 param show NAV_DLL_ACT` or `sitl px4 commander takeoff` |
 
-Gazebo runs as its own process and PX4 starts in standalone mode, spawning
-the drone into the running world. `restart` removes the drone model before
-starting PX4 again, so the new PX4 spawns a fresh drone at the origin instead
-of attaching to the old one wherever it was.
+Gazebo runs as its own process. The script spawns the drone at the origin
+and PX4 starts in standalone mode, attached to it. `restart` removes the
+drone and spawns a new one under a new name (`x500_0`, `x500_1`, …): Gazebo
+keeps a removed model's sensors publishing, so reusing the name would give
+PX4 two conflicting sets of sensor data.
 
 Each PX4 start uses a fresh PX4 working directory under `SITL_STATE_DIR`, so
 parameters begin at their defaults and the PX4 build's own parameter file is

@@ -43,8 +43,8 @@ XRCE_PORT=${XRCE_PORT:-8888}
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SITL_BUILD=$PX4_DIR/build/px4_sitl_default
 LOG_DIR=$SITL_STATE_DIR/logs
-# PX4 spawns this model into the world (instance 0).
-MODEL_NAME=${PX4_SIM_MODEL#gz_}_0
+# Gazebo model directory; spawned as <model>_<n>, see spawn_model.
+MODEL=${PX4_SIM_MODEL#gz_}
 # In stop order.
 COMPONENTS=(core px4 gui gz agent)
 # Set while a start (or a run) is in progress so a failure stops what was started.
@@ -57,6 +57,10 @@ die() {
 }
 
 setup_env() {
+    # Sets GZ_SIM_* paths and PX4_GZ_MODELS/WORLDS for PX4's Gazebo resources.
+    if [[ -f $SITL_BUILD/rootfs/gz_env.sh ]]; then
+        source "$SITL_BUILD/rootfs/gz_env.sh"
+    fi
     if [[ -f $HOME/.local/share/no-crash/environment.sh ]]; then
         source "$HOME/.local/share/no-crash/environment.sh"
     fi
@@ -128,6 +132,7 @@ cmd_start() {
     echo "Starting MicroXRCEAgent on UDP $XRCE_PORT"
     spawn agent MicroXRCEAgent udp4 -p "$XRCE_PORT"
     start_gz "$gui"
+    spawn_model "${MODEL}_0"
     start_px4
     (( start_core )) && start_core
     stop_on_exit=${run_in_progress:-0}
@@ -142,19 +147,18 @@ cmd_restart() {
     (( restart_core )) && check_core_built
 
     stop_components core px4
-    echo "Removing $MODEL_NAME from the world"
+    local old_model
+    old_model=$(cat "$SITL_STATE_DIR/model")
+    echo "Removing $old_model from the world"
     gz service -s "/world/$PX4_GZ_WORLD/remove" --reqtype gz.msgs.Entity \
         --reptype gz.msgs.Boolean --timeout 5000 \
-        --req "name: \"$MODEL_NAME\", type: MODEL" > /dev/null || true
-    # Removal happens on a later simulation step. If the model were still
-    # there, PX4 would attach to it where it is instead of spawning a new one.
-    local deadline=$((SECONDS + SITL_TIMEOUT))
-    while model_exists; do
-        (( SECONDS < deadline )) || die "timed out waiting for $MODEL_NAME to be removed"
-        sleep 0.5
-    done
+        --req "name: \"$old_model\", type: MODEL" > /dev/null || true
 
     stop_on_exit=1
+    # A removed model's sensors keep publishing on topics named after it, so
+    # the new model needs a new name or PX4 would read both, e.g. two
+    # conflicting magnetometers.
+    spawn_model "${MODEL}_$(( ${old_model##*_} + 1 ))"
     start_px4
     (( restart_core )) && start_core
     stop_on_exit=0
@@ -167,14 +171,27 @@ check_core_built() {
 }
 
 model_exists() {
-    gz model --list 2>/dev/null | grep -qx "[[:space:]]*- $MODEL_NAME"
+    gz model --list 2>/dev/null | grep -qx "[[:space:]]*- $1"
+}
+
+# Spawn the vehicle at the origin as `name`; PX4 attaches to the model
+# recorded in $SITL_STATE_DIR/model.
+spawn_model() {
+    local name=$1 deadline=$((SECONDS + SITL_TIMEOUT))
+    echo "Spawning $name"
+    gz service -s "/world/$PX4_GZ_WORLD/create" --reqtype gz.msgs.EntityFactory \
+        --reptype gz.msgs.Boolean --timeout 5000 \
+        --req "name: \"$name\", allow_renaming: false, sdf: '<sdf version=\"1.6\"><include><uri>file://$PX4_GZ_MODELS/$MODEL/model.sdf</uri></include></sdf>'" > /dev/null
+    until model_exists "$name"; do
+        (( SECONDS < deadline )) || die "timed out waiting for $name to spawn"
+        sleep 0.5
+    done
+    echo "$name" > "$SITL_STATE_DIR/model"
 }
 
 start_gz() {
     local gui=$1
     echo "Starting Gazebo (world $PX4_GZ_WORLD)"
-    # Sets GZ_SIM_* paths for PX4's models, worlds and plugins.
-    source "$SITL_BUILD/rootfs/gz_env.sh"
     spawn gz gz sim --verbose=1 -r -s "$PX4_GZ_WORLDS/$PX4_GZ_WORLD.sdf"
     (( gui )) && spawn gui gz sim -g
     local deadline=$((SECONDS + SITL_TIMEOUT))
@@ -185,7 +202,7 @@ start_gz() {
     done
 }
 
-# Start PX4 in a fresh working directory; it spawns the model at the origin.
+# Start PX4 in a fresh working directory, attached to the spawned model.
 start_px4() {
     rm -rf "$SITL_STATE_DIR/rootfs"
     mkdir -p "$SITL_STATE_DIR/rootfs"
@@ -194,7 +211,8 @@ start_px4() {
 
     echo "Starting PX4 SITL ($PX4_SIM_MODEL) from $PX4_DIR"
     spawn px4 env PX4_GZ_STANDALONE=1 PX4_GZ_WORLD="$PX4_GZ_WORLD" \
-        PX4_SIM_MODEL="$PX4_SIM_MODEL" GZ_IP=127.0.0.1 \
+        PX4_SIM_MODEL="$PX4_SIM_MODEL" PX4_GZ_MODEL_NAME="$(cat "$SITL_STATE_DIR/model")" \
+        GZ_IP=127.0.0.1 \
         "$SITL_BUILD/bin/px4" -d -w "$SITL_STATE_DIR/rootfs" "$SITL_BUILD/etc"
     wait_for_log px4 "data writer" "PX4 to connect to the XRCE agent"
     # Session parameters. Set at runtime: a PX4_PARAM_ override equal to the

@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -135,11 +136,6 @@ FlightCoreNode::FlightCoreNode()
 
 void FlightCoreNode::on_timer()
 {
-  flight_core_interfaces::msg::CoreState core_state;
-  core_state.state = state_;
-  core_state.lease_holder = lease_.holder_name();
-  core_state_pub_->publish(core_state);
-
   const uint64_t now = timestamp_us();
   px4_msgs::msg::OffboardControlMode mode{};
   mode.timestamp = now;
@@ -164,6 +160,12 @@ void FlightCoreNode::on_timer()
     hold_setpoint_ = goto_at(*local_position_);
   }
   was_engaged_ = engaged;
+
+  flight_core_interfaces::msg::CoreState core_state;
+  core_state.state = state_;
+  core_state.lease_holder = lease_.holder_name();
+  core_state.target_position = target_position();
+  core_state_pub_->publish(core_state);
 
   // PX4 runs goto in any position-controlled mode on cycles where the active
   // flight task has not published, so only stream setpoints while in offboard.
@@ -396,6 +398,23 @@ void FlightCoreNode::send_after_heartbeats(uint32_t command, float param1, float
     return;
   }
   pending_commands_.push_back(make_vehicle_command(command, param1, param2));
+}
+
+std::array<float, 3> FlightCoreNode::target_position() const
+{
+  switch (state_) {
+    case CoreCommand::Request::HOLD:
+      if (hold_setpoint_) {
+        return hold_setpoint_->position;
+      }
+      break;
+    case CoreCommand::Request::GOTO:
+      return goto_setpoint_.position;
+    case CoreCommand::Request::TRAJECTORY:
+      return trajectory_setpoint_.position;
+  }
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  return {nan, nan, nan};
 }
 
 bool FlightCoreNode::heartbeats_established() const

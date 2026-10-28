@@ -76,6 +76,15 @@ implementation detail here.
   PX4 already auto-disarmed, then calls `position_mode()`.
 - On context exit, the client calls `hold()` only if offboard and armed, then
   releases.
+- The spin thread swallows `ExternalShutdownException`, which rclpy raises
+  when Ctrl-C shuts down the context.
+- Requests that need control get their id from `_held_lease()`, which raises
+  `ControlError('Control is not held')` instead of a rosidl assertion.
+- `reacquire()` resets the lease and acquires it. It exists for long-running
+  clients such as `flight_visualizer_bridge`, whose lease outlives a restart
+  because leases never expire. It takes control from any holder.
+- `flight_visualizer_bridge` subclasses `Drone` and reads its private PX4 and
+  core state fields; keep them stable or update the bridge.
 
 ## Layout
 

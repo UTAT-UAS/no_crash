@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>flight_visualizer_bridge</name>
+  <version>0.0.1</version>
+  <description>Streams drone state to the flight visualizer over TCP and forwards its commands to flight_core.</description>
+  <maintainer email="benlow999@gmail.com">Benjamin Low</maintainer>
+  <license>GPL-3.0-only</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>flight_core</exec_depend>
+  <exec_depend>flight_core_interfaces</exec_depend>
+  <exec_depend>px4_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

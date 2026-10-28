@@ -8,11 +8,11 @@ import time
 from flight_core_interfaces.msg import CoreState
 from flight_core_interfaces.srv import (
     AcquireControl, CoreCommand, CoreVehicleCommand, Goto, ReleaseControl,
-    Trajectory)
+    ResetControl, Trajectory)
 from px4_msgs.msg import (
     VehicleLandDetected, VehicleLocalPosition, VehicleStatus)
 import rclpy
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.qos import qos_profile_sensor_data
 
 
@@ -70,6 +70,8 @@ class Drone:
             AcquireControl, '/flight_core/in/acquire_control')
         self._release = self._node.create_client(
             ReleaseControl, '/flight_core/in/release_control')
+        self._reset = self._node.create_client(
+            ResetControl, '/flight_core/in/reset_control')
         self._core_command = self._node.create_client(
             CoreCommand, '/flight_core/in/core_command')
         self._vehicle_command = self._node.create_client(
@@ -81,7 +83,7 @@ class Drone:
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
         self._spin_thread = threading.Thread(
-            target=self._executor.spin, daemon=True)
+            target=self._spin, daemon=True)
         self._spin_thread.start()
 
     def __enter__(self):
@@ -126,10 +128,20 @@ class Drone:
         self._lease_id = self._call(self._acquire, request).lease_id
         self._log.info(f'Control acquired (lease {self._lease_id})')
 
+    def reacquire(self, timeout=10.0):
+        """Take the control lease even if another client holds it.
+
+        Resets the lease, which switches the core to HOLD, then acquires it.
+        """
+        self._log.info('Resetting control to reacquire it')
+        self._lease_id = None
+        self._call(self._reset, ResetControl.Request())
+        self.acquire(timeout)
+
     def release(self):
         """Give up the control lease; the vehicle keeps its current target."""
         self._log.info('Releasing control')
-        request = ReleaseControl.Request(lease_id=self._lease_id)
+        request = ReleaseControl.Request(lease_id=self._held_lease())
         self._lease_id = None
         self._call(self._release, request)
 
@@ -224,7 +236,7 @@ class Drone:
             f'heading {heading:.2f} rad'
             + ('' if max_speed is None else f', max speed {max_speed} m/s'))
         request = Goto.Request(
-            lease_id=self._lease_id,
+            lease_id=self._held_lease(),
             position=[float(x), float(y), float(z)],
             heading=float(heading),
             max_horizontal_speed=math.nan if max_speed is None
@@ -260,7 +272,7 @@ class Drone:
             f'Trajectory position={position} velocity={velocity} '
             f'acceleration={acceleration} yaw={yaw} yawspeed={yawspeed}')
         request = Trajectory.Request(
-            lease_id=self._lease_id,
+            lease_id=self._held_lease(),
             position=_vector(position),
             velocity=_vector(velocity),
             acceleration=_vector(acceleration),
@@ -324,6 +336,12 @@ class Drone:
 
     # Internals
 
+    def _spin(self):
+        try:
+            self._executor.spin()
+        except ExternalShutdownException:
+            pass  # Ctrl-C shut down the ROS context.
+
     def _on_core_state(self, msg):
         self._core_status = msg
 
@@ -336,15 +354,20 @@ class Drone:
     def _on_land_detected(self, msg):
         self._land_detected = msg
 
+    def _held_lease(self):
+        if self._lease_id is None:
+            raise ControlError('Control is not held')
+        return self._lease_id
+
     def _set_state(self, state):
         self._log.info(f'Requesting core state {_STATE_NAMES[state]}')
-        request = CoreCommand.Request(lease_id=self._lease_id, state=state)
+        request = CoreCommand.Request(lease_id=self._held_lease(), state=state)
         self._call(self._core_command, request)
         self._core_state = state
 
     def _send_vehicle_command(self, command):
         request = CoreVehicleCommand.Request(
-            lease_id=self._lease_id, command=command)
+            lease_id=self._held_lease(), command=command)
         self._call(self._vehicle_command, request)
 
     def _call(self, client, request):

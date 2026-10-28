@@ -1,0 +1,13 @@
+[project]
+name = "flight-visualizer-backend"
+version = "0.1.0"
+description = "Relays flight_visualizer_bridge state and commands to the dashboard."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162",
+    "uvicorn[standard]>=0.54",
+]
+
+[tool.uv]
+# Use the container's Python rather than downloading one.
+python-preference = "only-system"

@@ -62,13 +62,15 @@ export changes stored elsewhere before recreating the container.
 ## Project layout
 
 - [`uas_ws/src/`](uas_ws/README.md): ROS 2 Jazzy packages, built with colcon from the monorepo root.
-- [`flight_visualizer/frontend/`](flight_visualizer/frontend/README.md): Svelte frontend using Bun.
+- [`flight_visualizer/frontend/`](flight_visualizer/frontend/flight_visualizer/README.md): Svelte frontend using Bun.
 - [`flight_visualizer/backend/`](flight_visualizer/backend/README.md): Python backend with its own environment and dependencies.
 - [`hardware_manager/`](hardware_manager/README.md): Bash and Python hardware scripts.
 
 The ROS workspace contains `flight_core`, a Python and C++ package for the PX4
-offboard flight controller. The other projects currently contain README
-placeholders. Each project declares its own dependencies as implementation begins.
+offboard flight controller, and `flight_visualizer_bridge`, which links it to
+the flight visualizer's FastAPI backend and Svelte dashboard.
+`hardware_manager` is still a placeholder. Each project declares its own
+dependencies.
 
 ## Guides
 

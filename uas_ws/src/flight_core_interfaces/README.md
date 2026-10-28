@@ -16,6 +16,6 @@ outputs under `/flight_core/out/`.
 
 | Topic | Type | Content |
 |---|---|---|
-| `/flight_core/out/core_state` | `CoreState` | Core state and lease holder, at the core's rate |
+| `/flight_core/out/core_state` | `CoreState` | Core state, lease holder and target position, at the core's rate |
 
 Vehicle state is not wrapped; clients read PX4's `/fmu/out/*` topics directly.
