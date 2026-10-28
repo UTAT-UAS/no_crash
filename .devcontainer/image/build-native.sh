@@ -68,6 +68,11 @@ cmake --install Micro-XRCE-DDS-Agent/build
 (
     umask 0000
     checkout "$PX4_URL" "$PX4_REVISION" PX4-Autopilot
+    # PX4 derives its firmware version from `git describe --tags`; without the
+    # release tag in the shallow checkout it reports v0.0.0.
+    git -C PX4-Autopilot fetch --depth 1 origin \
+        "refs/tags/v$PX4_VERSION:refs/tags/v$PX4_VERSION"
+    test "$(git -C PX4-Autopilot rev-parse "v$PX4_VERSION^{commit}")" = "$PX4_REVISION"
     git -C PX4-Autopilot submodule update --init --recursive --depth 1
     python3 -m venv "$HOME/.venvs/px4"
     "$HOME/.venvs/px4/bin/python" -m pip install \

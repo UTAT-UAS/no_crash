@@ -12,20 +12,20 @@ NO_CRASH_BUILD_JOBS=4 ./.devcontainer/build-images.sh cpu
 
 The helper accepts `cpu`, `nvidia`, `nvidia-compat`, `amd`, `amd-wsl`, or `all`.
 It loads `no_crash:local-<profile>` into Docker. `all` builds profiles in order,
-shares common BuildKit stages, and stops on failure. Start with four compilation
-jobs; lower `NO_CRASH_BUILD_JOBS` on machines with limited RAM. Native builds
+shares common BuildKit stages, and stops on failure. Native compilation uses
+every available core; set `NO_CRASH_BUILD_JOBS` lower on machines with limited RAM. Native builds
 and GPU dependencies need substantial disk space.
 
 The equivalent direct command for CPU is:
 
 ```bash
 docker buildx build --load --platform linux/amd64 --target cpu \
-  --build-arg BUILD_JOBS=4 -f .devcontainer/Dockerfile -t no_crash:local-cpu .
+  -f .devcontainer/Dockerfile -t no_crash:local-cpu .
 ```
 
 Local configurations declare the Dockerfile, build context, and profile target
 in Compose. Dev Containers builds them automatically with `./enter.sh --local`
-or VS Code's **local image** choice. They use `NO_CRASH_BUILD_JOBS` (default 4)
+or VS Code's **local image** choice. They use `NO_CRASH_BUILD_JOBS` (default: all cores)
 and tag the result `no_crash:local-<profile>`. The build helper remains available
 for explicit builds and publishing.
 
@@ -105,13 +105,13 @@ repository or release:
 
 ```bash
 NO_CRASH_IMAGE_PREFIX=ghcr.io/your-org/no_crash \
-NO_CRASH_IMAGE_TAG=2026-10-01-r2 ./.devcontainer/push-images.sh all
+NO_CRASH_IMAGE_TAG=2026-10-27-r2 ./.devcontainer/push-images.sh all
 ```
 
 ## Prebuilt images
 
 Prebuilt configurations default to
-`ghcr.io/utat-uas/no_crash:2026-10-01-<profile>` and work once those images are
+`ghcr.io/utat-uas/no_crash:2026-10-27-<profile>` and work once those images are
 published. Choose a prebuilt configuration in VS Code, or run:
 
 ```bash
@@ -119,12 +119,13 @@ published. Choose a prebuilt configuration in VS Code, or run:
 ```
 
 Set `NO_CRASH_IMAGE_PREFIX` and `NO_CRASH_IMAGE_TAG` before starting VS Code or
-`enter.sh` to select another repository/release. Alternatively, create ignored
-`.devcontainer/images.json` with per-profile references:
+`enter.sh` to select another repository/release. Alternatively, create
+`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/images.json` on the host with
+per-profile references:
 
 ```json
 {
-  "cpu": "ghcr.io/your-org/no_crash:2026-10-01-cpu",
+  "cpu": "ghcr.io/your-org/no_crash:2026-10-27-cpu",
   "nvidia": "ghcr.io/your-org/no_crash@sha256:<published-digest>"
 }
 ```

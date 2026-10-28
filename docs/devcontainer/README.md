@@ -72,8 +72,9 @@ colcon build --base-paths uas_ws/src --symlink-install
 
 Projects own and install their dependencies; container hooks do not discover
 manifests. Use Bun and committed `bun.lock` files for JavaScript/TypeScript.
-Create a dedicated venv for each Python project; ROS-dependent venvs can use
-system Python with `--system-site-packages`. See [project workflows](../development/README.md).
+Use uv with a committed `uv.lock` for Python projects that do not need ROS.
+ROS-dependent Python projects use a dedicated venv on system Python with
+`--system-site-packages`. See [project workflows](../development/README.md).
 
 Activate the supplied vision tools explicitly:
 

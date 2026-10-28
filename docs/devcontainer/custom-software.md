@@ -15,7 +15,9 @@ working directory. It needs no executable permission. A missing directory or
 script is skipped; failures appear in the Dev Containers log and fail the
 creation step. Personal configuration stays outside the checkout and image
 builds. The old `.devcontainer/custom-install.sh` location is no longer used;
-move any existing installer to the host configuration directory.
+move any existing installer to the host configuration directory. The same
+directory holds the optional `runtime-options.json` and `images.json`; see
+[host setup](host-setup.md#equipment-and-networking).
 
 The hook runs on creation, including recreation after a rebuild, rather than
 on restart or when the file changes. It runs as a child process, so persistent
@@ -43,7 +45,7 @@ chmod +x "$HOME/.local/bin/my-workspace"
 
 Make installers safe to rerun: check installed versions, replace owned files,
 and avoid repeatedly appending shell settings. Check download hashes and limit
-compilation jobs with `${BUILD_JOBS:-4}`.
+compilation jobs with `${BUILD_JOBS:-$(nproc)}`.
 
 For source builds, use `/build/<software>` and install under `~/.local/opt` or
 `~/.local`. Create dedicated Python venvs under `~/.venvs`; keep pip out of system

@@ -25,6 +25,12 @@ def expected_files():
                 'shutdownAction': 'stopCompose', 'overrideCommand': False,
                 'initializeCommand': ['python3', '${localWorkspaceFolder}/.devcontainer/scripts/prepare-host.py', '--profile', profile] + (['--prebuilt'] if prebuilt else []),
                 'onCreateCommand': ['bash', '/home/uas/workspace/.devcontainer/on-create.sh'],
+                # Docker publishes these (prepare-host.py), so VS Code must not
+                # also forward them.
+                'portsAttributes': {
+                    '5173': {'label': 'Flight visualizer frontend', 'onAutoForward': 'ignore'},
+                    '8000': {'label': 'Flight visualizer backend', 'onAutoForward': 'ignore'},
+                },
                 'customizations': {'vscode': {'extensions': EXTENSIONS}},
             }
             service = {
@@ -34,12 +40,12 @@ def expected_files():
                     # Compose resolves paths relative to the first file,
                     # .devcontainer/compose.yaml, rather than this override.
                     'context': '..', 'dockerfile': '.devcontainer/Dockerfile',
-                    'target': profile, 'args': {'BUILD_JOBS': '${NO_CRASH_BUILD_JOBS:-4}'},
+                    'target': profile, 'args': {'BUILD_JOBS': '${NO_CRASH_BUILD_JOBS:-}'},
                 },
             }
             if prebuilt:
                 service = {
-                    'image': f'ghcr.io/utat-uas/no_crash:2026-10-01-{profile}',
+                    'image': f'ghcr.io/utat-uas/no_crash:2026-10-27-{profile}',
                     'pull_policy': 'missing',
                 }
             yield f'{directory}/devcontainer.json', json.dumps(config, indent=2) + '\n'

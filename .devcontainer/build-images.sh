@@ -14,8 +14,8 @@ case "$profile" in
     cpu|nvidia|nvidia-compat|amd|amd-wsl) profiles=("$profile") ;;
     *) printf 'Unknown profile: %s\n' "$profile" >&2; exit 2 ;;
 esac
-jobs=${NO_CRASH_BUILD_JOBS:-4}
-if [[ ! $jobs =~ ^[1-9][0-9]*$ ]]; then printf 'NO_CRASH_BUILD_JOBS must be a positive integer\n' >&2; exit 2; fi
+jobs=${NO_CRASH_BUILD_JOBS:-}
+if [[ -n $jobs && ! $jobs =~ ^[1-9][0-9]*$ ]]; then printf 'NO_CRASH_BUILD_JOBS must be a positive integer\n' >&2; exit 2; fi
 for profile in "${profiles[@]}"; do
     image=${2:-no_crash:local-$profile}
     docker buildx build --load --platform linux/amd64 --target "$profile" \

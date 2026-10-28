@@ -2,6 +2,10 @@
 set -euo pipefail
 source /usr/local/share/no-crash/versions.env
 
+# An empty BUILD_JOBS uses every available core.
+BUILD_JOBS=${BUILD_JOBS:-$(nproc)}
+export BUILD_JOBS CMAKE_BUILD_PARALLEL_LEVEL=$BUILD_JOBS CARGO_BUILD_JOBS=$BUILD_JOBS
+
 download() {
     local url=$1 checksum=$2 destination=$3
     curl --fail --location --retry 3 --output "$destination" "$url"

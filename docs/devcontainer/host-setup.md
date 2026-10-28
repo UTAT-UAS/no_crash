@@ -92,7 +92,8 @@ See [NVIDIA's CDI guide](https://docs.nvidia.com/datacenter/cloud-native/contain
 for spec generation and `nvidia-ctk cdi list`. On NixOS, enable the distribution's
 NVIDIA container tooling and generated CDI specification.
 
-To select the runtime explicitly, create ignored `.devcontainer/runtime-options.json`:
+To select the runtime explicitly, create
+`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/runtime-options.json` on the host:
 
 ```json
 {"nvidia_mode": "runtime"}
@@ -207,7 +208,9 @@ python3 .devcontainer/scripts/prepare-host.py --profile cpu --headless --dry-run
 
 ## Equipment and networking
 
-Devices are opt-in through ignored `.devcontainer/runtime-options.json`:
+Devices are opt-in through `runtime-options.json` in your host's
+`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash` directory, next to
+[`custom-install.sh`](custom-software.md):
 
 ```json
 {"hardware_devices": ["/dev/ttyACM0", "/dev/video0", "/dev/input/js0"]}
@@ -225,3 +228,13 @@ Simulation, QGC, and the DDS Agent run in the same container by default. For
 external ROS discovery or host QGC on native Linux, add `"host_network": true`
 to the options file, recreate the container, and check firewall/ROS domain
 settings. This override is restricted to native Linux.
+
+Otherwise the flight visualizer ports, 5173 (frontend) and 8000 (backend), are
+published on the host's loopback: `127.0.0.1`, plus `::1` on native Linux hosts
+with IPv6 so `localhost` works in every browser. They are not reachable from
+other machines. VS Code is configured not to forward them as well; remove any
+manual forwards of these ports.
+
+The initializer stops with an error if it finds an options file at the old
+`.devcontainer/runtime-options.json` or `.devcontainer/images.json` location;
+move it to the host configuration directory.

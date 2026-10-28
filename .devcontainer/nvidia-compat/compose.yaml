@@ -9,7 +9,7 @@
         "dockerfile": ".devcontainer/Dockerfile",
         "target": "nvidia-compat",
         "args": {
-          "BUILD_JOBS": "${NO_CRASH_BUILD_JOBS:-4}"
+          "BUILD_JOBS": "${NO_CRASH_BUILD_JOBS:-}"
         }
       }
     }
