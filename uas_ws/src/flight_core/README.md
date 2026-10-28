@@ -79,9 +79,9 @@ From the monorepo root, with ROS 2 Jazzy sourced and submodules initialised:
 ```bash
 colcon build --base-paths uas_ws/src --packages-up-to flight_core --symlink-install
 source install/local_setup.bash
-uas_ws/scripts/sitl run -- ros2 run flight_core example_mission   # SITL: start, run, stop
+scripts/sitl run -- ros2 run flight_core example_mission   # SITL: start, run, stop
 ```
 
-See the [ROS workspace README](../../README.md#sitl-testing) for SITL options.
+See the [SITL testing guide](../../../docs/development/README.md#sitl-testing) for SITL options.
 On hardware, run `ros2 launch flight_core flight_core.launch.py` (default
 `mode:=real`).

@@ -14,6 +14,6 @@ The container publishes port 5173 on the host, so open
 `http://localhost:5173` there. With a VS Code port forward instead, use
 `http://127.0.0.1:5173` in Firefox.
 
-To try it in simulation, run `uas_ws/scripts/sitl start`,
+To try it in simulation, run `scripts/sitl start`,
 `ros2 run flight_visualizer_bridge flight_visualizer_bridge`, the backend, and
 `bun run dev`.

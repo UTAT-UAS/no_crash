@@ -45,7 +45,7 @@ one. Both directions carry newline-delimited compact JSON. Keep
 
 ```bash
 colcon build --base-paths uas_ws/src --packages-select flight_core flight_visualizer_bridge --symlink-install
-uas_ws/scripts/sitl start
+scripts/sitl start
 ros2 run flight_visualizer_bridge flight_visualizer_bridge
 ```
 

@@ -40,7 +40,7 @@ SITL_STATE_DIR=${SITL_STATE_DIR:-${TMPDIR:-/tmp}/flight_core_sitl}
 SITL_TIMEOUT=${SITL_TIMEOUT:-120}
 XRCE_PORT=${XRCE_PORT:-8888}
 
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SITL_BUILD=$PX4_DIR/build/px4_sitl_default
 LOG_DIR=$SITL_STATE_DIR/logs
 # Gazebo model directory; spawned as <model>_<n>, see spawn_model.

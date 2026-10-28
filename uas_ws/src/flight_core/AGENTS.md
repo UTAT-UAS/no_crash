@@ -110,9 +110,9 @@ colcon build --base-paths uas_ws/src --packages-up-to flight_core --symlink-inst
 colcon test --base-paths uas_ws/src --packages-select flight_core
 colcon test-result --verbose --test-result-base /build/colcon/build/flight_core
 python3 -m py_compile uas_ws/src/flight_core/flight_core/client.py
-uas_ws/scripts/sitl run -- ros2 run flight_core example_mission
+scripts/sitl run -- ros2 run flight_core example_mission
 ```
 
-Use `uas_ws/scripts/sitl` for runtime checks (`start`, `restart`, `px4
+Use `scripts/sitl` for runtime checks (`start`, `restart`, `px4
 <module>`). Logs are in `$SITL_STATE_DIR/logs` (default
 `/build/tmp/flight_core_sitl/logs`).
