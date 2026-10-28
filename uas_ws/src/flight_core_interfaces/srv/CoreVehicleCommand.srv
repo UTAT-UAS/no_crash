@@ -1,0 +1,12 @@
+# Discrete PX4 vehicle command from the lease holder.
+uint8 ARM = 0
+uint8 DISARM = 1
+uint8 OFFBOARD = 2 # sent once 10 offboard heartbeats have been published
+uint8 LAND = 3 # switch to PX4 land mode; flight_core returns to HOLD
+uint8 POSITION = 4 # switch to PX4 position mode; flight_core returns to HOLD
+
+uint32 lease_id
+uint8 command
+---
+bool success # validated and sent (or queued) to PX4; confirm the effect from PX4 topics
+string message

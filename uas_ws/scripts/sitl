@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# Reproducible PX4 SITL sessions for flight_core testing.
+#
+# Usage: sitl <command> [options]
+#   start [--no-core] [--gui]  Start XRCE agent, Gazebo, PX4 SITL and (by
+#                              default) flight_core in sim mode; wait until
+#                              ready.
+#   restart                    Restart PX4 with fresh parameters and respawn the
+#                              drone at the origin, keeping Gazebo and the
+#                              agent running. flight_core is restarted if it
+#                              was running.
+#   stop                       Stop everything started by `start`.
+#   status                     Show running components and log paths.
+#   run [start options] -- <command...>
+#                              start, run the command, stop; exits with the
+#                              command's status. Logs are kept for inspection.
+#   px4 <module> [args...]     Run a PX4 shell command, e.g. `sitl px4 param
+#                              show NAV_DLL_ACT` or `sitl px4 commander takeoff`.
+#
+# Environment:
+#   PX4_DIR          PX4-Autopilot checkout (default ~/build/PX4-Autopilot)
+#   PX4_SIM_MODEL    Simulated vehicle (default gz_x500)
+#   PX4_GZ_WORLD     Gazebo world in PX4's worlds directory (default default)
+#   SITL_STATE_DIR   PIDs, logs and PX4 working directory
+#                    (default ${TMPDIR:-/tmp}/flight_core_sitl)
+#   SITL_TIMEOUT     Seconds to wait for readiness (default 120)
+#   XRCE_PORT        MicroXRCEAgent UDP port (default 8888)
+#
+# Every PX4 start uses a fresh PX4 working directory, so parameters begin at their
+# defaults. For the session, NAV_DLL_ACT is set to 0 so PX4 arms without a GCS
+# and COM_RC_LOSS_T to 5 s; your normal SITL parameters in the PX4 build
+# directory are not touched.
+
+set -eo pipefail
+
+PX4_DIR=${PX4_DIR:-$HOME/build/PX4-Autopilot}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:-gz_x500}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:-default}
+SITL_STATE_DIR=${SITL_STATE_DIR:-${TMPDIR:-/tmp}/flight_core_sitl}
+SITL_TIMEOUT=${SITL_TIMEOUT:-120}
+XRCE_PORT=${XRCE_PORT:-8888}
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+SITL_BUILD=$PX4_DIR/build/px4_sitl_default
+LOG_DIR=$SITL_STATE_DIR/logs
+# PX4 spawns this model into the world (instance 0).
+MODEL_NAME=${PX4_SIM_MODEL#gz_}_0
+# In stop order.
+COMPONENTS=(core px4 gui gz agent)
+# Set while a start (or a run) is in progress so a failure stops what was started.
+stop_on_exit=0
+trap '(( stop_on_exit )) && cmd_stop' EXIT
+
+die() {
+    echo "sitl: $*" >&2
+    exit 1
+}
+
+setup_env() {
+    if [[ -f $HOME/.local/share/no-crash/environment.sh ]]; then
+        source "$HOME/.local/share/no-crash/environment.sh"
+    fi
+    # ROS setup scripts reference unset variables.
+    set +u
+    source /opt/ros/jazzy/setup.bash
+    if [[ -f $REPO_ROOT/install/local_setup.bash ]]; then
+        source "$REPO_ROOT/install/local_setup.bash"
+    fi
+}
+
+pid_of() {
+    local file=$SITL_STATE_DIR/$1.pid
+    [[ -f $file ]] && cat "$file"
+}
+
+is_running() {
+    local pid
+    pid=$(pid_of "$1") && kill -0 "$pid" 2>/dev/null
+}
+
+# Start a command in its own process group so stop can kill all its children.
+spawn() {
+    local name=$1
+    shift
+    setsid "$@" > "$LOG_DIR/$name.log" 2>&1 < /dev/null &
+    echo $! > "$SITL_STATE_DIR/$name.pid"
+    disown
+}
+
+wait_for_log() {
+    local name=$1 pattern=$2 description=$3 deadline=$((SECONDS + SITL_TIMEOUT))
+    until grep -q "$pattern" "$LOG_DIR/$name.log" 2>/dev/null; do
+        if ! is_running "$name"; then
+            tail -n 40 "$LOG_DIR/$name.log" >&2 || true
+            die "$name exited while waiting for $description"
+        fi
+        if (( SECONDS >= deadline )); then
+            tail -n 40 "$LOG_DIR/$name.log" >&2 || true
+            die "timed out after ${SITL_TIMEOUT}s waiting for $description"
+        fi
+        sleep 0.5
+    done
+}
+
+cmd_start() {
+    local start_core=1 gui=0
+    while (( $# )); do
+        case $1 in
+            --no-core) start_core=0 ;;
+            --gui) gui=1 ;;
+            *) die "unknown start option '$1'" ;;
+        esac
+        shift
+    done
+
+    [[ -x $SITL_BUILD/bin/px4 ]] || die "no SITL build at $SITL_BUILD (set PX4_DIR or run 'make px4_sitl')"
+    for name in "${COMPONENTS[@]}"; do
+        is_running "$name" && die "$name is already running; run 'sitl stop' first"
+    done
+    setup_env
+    command -v MicroXRCEAgent > /dev/null || die "MicroXRCEAgent not found on PATH"
+    (( start_core )) && check_core_built
+
+    stop_on_exit=1
+    rm -rf "$SITL_STATE_DIR"
+    mkdir -p "$LOG_DIR"
+
+    echo "Starting MicroXRCEAgent on UDP $XRCE_PORT"
+    spawn agent MicroXRCEAgent udp4 -p "$XRCE_PORT"
+    start_gz "$gui"
+    start_px4
+    (( start_core )) && start_core
+    stop_on_exit=${run_in_progress:-0}
+    echo "SITL ready. Logs: $LOG_DIR"
+}
+
+cmd_restart() {
+    is_running gz || die "Gazebo is not running; use 'sitl start'"
+    local restart_core=0
+    is_running core && restart_core=1
+    setup_env
+    (( restart_core )) && check_core_built
+
+    stop_components core px4
+    echo "Removing $MODEL_NAME from the world"
+    gz service -s "/world/$PX4_GZ_WORLD/remove" --reqtype gz.msgs.Entity \
+        --reptype gz.msgs.Boolean --timeout 5000 \
+        --req "name: \"$MODEL_NAME\", type: MODEL" > /dev/null || true
+    # Removal happens on a later simulation step. If the model were still
+    # there, PX4 would attach to it where it is instead of spawning a new one.
+    local deadline=$((SECONDS + SITL_TIMEOUT))
+    while model_exists; do
+        (( SECONDS < deadline )) || die "timed out waiting for $MODEL_NAME to be removed"
+        sleep 0.5
+    done
+
+    stop_on_exit=1
+    start_px4
+    (( restart_core )) && start_core
+    stop_on_exit=0
+    echo "SITL restarted. Logs: $LOG_DIR"
+}
+
+check_core_built() {
+    ros2 pkg prefix flight_core > /dev/null 2>&1 \
+        || die "flight_core is not built; run colcon build from $REPO_ROOT"
+}
+
+model_exists() {
+    gz model --list 2>/dev/null | grep -qx "[[:space:]]*- $MODEL_NAME"
+}
+
+start_gz() {
+    local gui=$1
+    echo "Starting Gazebo (world $PX4_GZ_WORLD)"
+    # Sets GZ_SIM_* paths for PX4's models, worlds and plugins.
+    source "$SITL_BUILD/rootfs/gz_env.sh"
+    spawn gz gz sim --verbose=1 -r -s "$PX4_GZ_WORLDS/$PX4_GZ_WORLD.sdf"
+    (( gui )) && spawn gui gz sim -g
+    local deadline=$((SECONDS + SITL_TIMEOUT))
+    until gz service -i --service "/world/$PX4_GZ_WORLD/scene/info" 2>&1 | grep -q "Service providers"; do
+        is_running gz || { tail -n 40 "$LOG_DIR/gz.log" >&2; die "gz exited while starting"; }
+        (( SECONDS < deadline )) || die "timed out after ${SITL_TIMEOUT}s waiting for the Gazebo world"
+        sleep 0.5
+    done
+}
+
+# Start PX4 in a fresh working directory; it spawns the model at the origin.
+start_px4() {
+    rm -rf "$SITL_STATE_DIR/rootfs"
+    mkdir -p "$SITL_STATE_DIR/rootfs"
+    # PX4's gz startup sources gz_env.sh from its working directory.
+    cp "$SITL_BUILD/rootfs/gz_env.sh" "$SITL_STATE_DIR/rootfs/"
+
+    echo "Starting PX4 SITL ($PX4_SIM_MODEL) from $PX4_DIR"
+    spawn px4 env PX4_GZ_STANDALONE=1 PX4_GZ_WORLD="$PX4_GZ_WORLD" \
+        PX4_SIM_MODEL="$PX4_SIM_MODEL" GZ_IP=127.0.0.1 \
+        "$SITL_BUILD/bin/px4" -d -w "$SITL_STATE_DIR/rootfs" "$SITL_BUILD/etc"
+    wait_for_log px4 "data writer" "PX4 to connect to the XRCE agent"
+    # Session parameters. Set at runtime: a PX4_PARAM_ override equal to the
+    # built-in default is replaced by the airframe's set-default.
+    "$SITL_BUILD/bin/px4-param" set NAV_DLL_ACT 0 > /dev/null # arm without a GCS
+    "$SITL_BUILD/bin/px4-param" set COM_RC_LOSS_T 5 > /dev/null
+    wait_for_log px4 "Ready for takeoff" "PX4 to be ready for takeoff"
+}
+
+start_core() {
+    echo "Starting flight_core (mode:=sim)"
+    spawn core ros2 launch flight_core flight_core.launch.py mode:=sim
+    wait_for_log core "Flight core ready" "flight_core to start"
+}
+
+cmd_stop() {
+    stop_components "${COMPONENTS[@]}" || echo "Nothing running"
+}
+
+# Stop the named components; fails if none was running.
+stop_components() {
+    local name pid stopped=1
+    for name in "$@"; do
+        pid=$(pid_of "$name") || continue
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -INT -- "-$pid" 2>/dev/null || true
+            for _ in {1..20}; do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+            done
+            kill -KILL -- "-$pid" 2>/dev/null || true
+            echo "Stopped $name"
+            stopped=0
+        fi
+        rm -f "$SITL_STATE_DIR/$name.pid"
+    done
+    return "$stopped"
+}
+
+cmd_status() {
+    local name
+    for name in "${COMPONENTS[@]}"; do
+        if is_running "$name"; then
+            printf '%-6s running (pid %s)  %s\n' "$name" "$(pid_of "$name")" "$LOG_DIR/$name.log"
+        else
+            printf '%-6s stopped\n' "$name"
+        fi
+    done
+}
+
+cmd_run() {
+    local start_args=()
+    while (( $# )) && [[ $1 != -- ]]; do
+        start_args+=("$1")
+        shift
+    done
+    [[ $1 == -- ]] && shift
+    (( $# )) || die "usage: sitl run [start options] -- <command...>"
+
+    run_in_progress=1
+    cmd_start "${start_args[@]}"
+    local status=0
+    "$@" || status=$?
+    echo "Command exited with status $status. Logs: $LOG_DIR"
+    return "$status"
+}
+
+cmd_px4() {
+    (( $# )) || die "usage: sitl px4 <module> [args...]"
+    local module=$1
+    shift
+    [[ -x $SITL_BUILD/bin/px4-$module ]] || die "no PX4 module '$module' in $SITL_BUILD/bin"
+    is_running px4 || die "PX4 SITL is not running"
+    "$SITL_BUILD/bin/px4-$module" "$@"
+}
+
+case ${1:-} in
+    start) shift; cmd_start "$@" ;;
+    restart) shift; cmd_restart ;;
+    stop) shift; cmd_stop ;;
+    status) shift; cmd_status ;;
+    run) shift; cmd_run "$@" ;;
+    px4) shift; cmd_px4 "$@" ;;
+    -h | --help | help | '') sed -n '2,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
+    *) die "unknown command '$1'; see 'sitl --help'" ;;
+esac

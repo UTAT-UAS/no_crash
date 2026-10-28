@@ -3,4 +3,4 @@ string client_name
 ---
 bool success
 string message
-uint32 lease_id # pass with every Command and Goto request
+uint32 lease_id # pass with every request that needs control
