@@ -1,0 +1,6 @@
+{
+  "images": {
+    "cpu": "ghcr.io/your-org/no_crash:2026-10-28-cpu",
+    "nvidia": "ghcr.io/your-org/no_crash@sha256:<published-digest>"
+  }
+}

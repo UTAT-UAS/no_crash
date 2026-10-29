@@ -92,27 +92,55 @@ CMD ["sleep", "infinity"]
 LABEL org.opencontainers.image.title="no_crash ROS Jazzy development environment" \
       org.opencontainers.image.description="Ubuntu 24.04, PX4, ROS 2 Jazzy and selectable vision backends"
 
-FROM common AS cpu
+FROM common AS cpu-base
 ENV NO_CRASH_PROFILE=cpu
 RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cpu
 
-FROM common AS nvidia
+FROM common AS nvidia-base
 ENV NO_CRASH_PROFILE=nvidia
 RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cu132
 
-FROM common AS nvidia-compat
+FROM common AS nvidia-compat-base
 ENV NO_CRASH_PROFILE=nvidia-compat
 RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh cu126
 
-FROM common AS amd
+FROM common AS amd-base
 ENV NO_CRASH_PROFILE=amd
 RUN --mount=type=cache,id=/home/uas/.cache/pip,target=/home/uas/.cache/pip,uid=1000,gid=1000 \
     bash /usr/local/lib/no-crash/install-vision.sh rocm7.14
 
-FROM amd AS amd-wsl
+FROM amd-base AS amd-wsl-base
 ENV NO_CRASH_PROFILE=amd-wsl
 COPY .devcontainer/image/install-rocdxg.sh /usr/local/lib/no-crash/
 RUN bash /usr/local/lib/no-crash/install-rocdxg.sh
+
+# Developer tools are the final layer, so adding packages to install-extras.sh
+# or extras.env rebuilds only this step for each profile.
+
+FROM cpu-base AS cpu
+RUN --mount=type=bind,source=.devcontainer/image/install-extras.sh,target=/tmp/install-extras.sh \
+    --mount=type=bind,source=.devcontainer/extras.env,target=/tmp/extras.env \
+    bash /tmp/install-extras.sh /tmp/extras.env
+
+FROM nvidia-base AS nvidia
+RUN --mount=type=bind,source=.devcontainer/image/install-extras.sh,target=/tmp/install-extras.sh \
+    --mount=type=bind,source=.devcontainer/extras.env,target=/tmp/extras.env \
+    bash /tmp/install-extras.sh /tmp/extras.env
+
+FROM nvidia-compat-base AS nvidia-compat
+RUN --mount=type=bind,source=.devcontainer/image/install-extras.sh,target=/tmp/install-extras.sh \
+    --mount=type=bind,source=.devcontainer/extras.env,target=/tmp/extras.env \
+    bash /tmp/install-extras.sh /tmp/extras.env
+
+FROM amd-base AS amd
+RUN --mount=type=bind,source=.devcontainer/image/install-extras.sh,target=/tmp/install-extras.sh \
+    --mount=type=bind,source=.devcontainer/extras.env,target=/tmp/extras.env \
+    bash /tmp/install-extras.sh /tmp/extras.env
+
+FROM amd-wsl-base AS amd-wsl
+RUN --mount=type=bind,source=.devcontainer/image/install-extras.sh,target=/tmp/install-extras.sh \
+    --mount=type=bind,source=.devcontainer/extras.env,target=/tmp/extras.env \
+    bash /tmp/install-extras.sh /tmp/extras.env

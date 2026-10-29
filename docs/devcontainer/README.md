@@ -59,7 +59,8 @@ keep existing installations writable after UID/GID remapping.
 Container-local files survive restarts. Recreation restores the image's files;
 keep ongoing code in the mounted workspace and export other changes first.
 Create a branch before editing the detached PX4 checkout. Personal tools can be
-reinstalled with the [custom installation hook](custom-software.md).
+reinstalled with an [on-create script](custom-software.md#on-create-script), and
+[state mounts](custom-software.md#state-mounts) keep chosen directories on the host.
 
 ## Daily use
 
@@ -102,10 +103,11 @@ ROS builds use Jazzy's system dependencies.
 ## Maintenance
 
 - [Host setup](host-setup.md): Docker, GPU drivers, displays, and equipment.
-- [Custom software](custom-software.md): personal creation hook.
+- [Personal software and mounts](custom-software.md): runtime options, on-create script, and mounts.
 - [Build and publish](building.md): local images, release pins, and validation.
 - [Container agent guide](../../.devcontainer/AGENTS.md): implementation conventions.
 
-Release pins and download hashes are in `.devcontainer/versions.env`; the
+Release pins and download hashes are in `.devcontainer/versions.env`, and in
+`.devcontainer/extras.env` for the final [extras layer](building.md#extras-layer); the
 Dockerfile pins the Jazzy base by SHA-256. Apt packages follow supported Noble,
 Jazzy, and Gazebo repositories, with installed versions recorded in the image.

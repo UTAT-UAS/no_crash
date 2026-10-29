@@ -45,7 +45,7 @@ def expected_files():
             }
             if prebuilt:
                 service = {
-                    'image': f'ghcr.io/utat-uas/no_crash:2026-10-27-{profile}',
+                    'image': f'ghcr.io/utat-uas/no_crash:2026-10-28-{profile}',
                     'pull_policy': 'missing',
                 }
             yield f'{directory}/devcontainer.json', json.dumps(config, indent=2) + '\n'

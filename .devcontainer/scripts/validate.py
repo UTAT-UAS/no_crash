@@ -17,12 +17,12 @@ def run(*args):
 
 
 def source_files(root):
-    """Only container-owned inputs; exclude projects and personal installers."""
+    """Only container-owned inputs; exclude project directories."""
     container = root / '.devcontainer'
     python = sorted((container / 'scripts').glob('*.py')) + sorted((container / 'image').glob('*.py'))
     shell = sorted((container / 'image').glob('*.sh')) + sorted((container / 'image/bin').iterdir())
     shell += sorted((container / 'scripts').glob('*.sh'))
-    shell += sorted(p for p in container.glob('*.sh') if p.name != 'custom-install.sh')
+    shell += sorted(container.glob('*.sh'))
     return python, shell + [root / 'enter.sh']
 
 
@@ -33,7 +33,8 @@ def main():
     for path in shell_paths:
         run('bash', '-n', str(path))
     pins = {}
-    for line in (ROOT / '.devcontainer/versions.env').read_text().splitlines():
+    for line in ((ROOT / '.devcontainer/versions.env').read_text().splitlines()
+                 + (ROOT / '.devcontainer/extras.env').read_text().splitlines()):
         if line and not line.startswith('#'):
             key, value = line.split('=', 1)
             pins[key] = value.strip("'")

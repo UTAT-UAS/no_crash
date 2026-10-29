@@ -6,7 +6,7 @@ JSON is also valid YAML. Never invoke sudo, change drivers, or grant X11 access.
 import argparse
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import socket
 
@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CDI_DIRECTORIES = (Path('/etc/cdi'), Path('/var/run/cdi'))
 # Flight visualizer frontend (Vite) and backend, published on host loopback.
 PUBLISHED_PORTS = (5173, 8000)
+CONTAINER_HOME = PurePosixPath('/home/uas')
+# on-create.sh runs the configured script from this read-only mount.
+ON_CREATE_SCRIPT_TARGET = '/opt/no_crash/on-create-script'
 
 
 def nvidia_cdi_available():
@@ -36,9 +39,15 @@ def nvidia_cdi_available():
 
 
 def personal_config_dir():
-    """Host directory for personal setup: custom-install.sh and option files."""
+    """Host directory for personal setup: runtime-options.json and scripts."""
     config_home = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config')
     return config_home / 'no_crash'
+
+
+def personal_state_dir():
+    """Host directory backing the read/write state_mounts."""
+    state_home = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state')
+    return state_home / 'no_crash'
 
 
 def read_personal_json(name):
@@ -51,6 +60,77 @@ def read_personal_json(name):
     if not isinstance(content, dict):
         raise ValueError(f'{name} must contain an object')
     return content
+
+
+def read_runtime_options():
+    options = read_personal_json('runtime-options.json')
+    config = personal_config_dir()
+    for retired in (ROOT / '.devcontainer/images.json', config / 'images.json'):
+        if retired.exists():
+            raise ValueError(f'{retired} is no longer read; move its entries to "images" in runtime-options.json')
+    if (config / 'custom-install.sh').exists() and 'on_create_script' not in options:
+        raise ValueError(f'{config / "custom-install.sh"} no longer runs automatically; '
+                         'set "on_create_script": "custom-install.sh" in runtime-options.json')
+    return options
+
+
+def host_path(value, field):
+    """Expand ~ and resolve relative paths against the personal configuration directory."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'{field} must be a nonempty path')
+    return (personal_config_dir() / Path(value).expanduser()).resolve()
+
+
+def container_path(value, field):
+    """Absolute container path; ~ refers to /home/uas."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'{field} must be a nonempty path')
+    path = PurePosixPath(value)
+    if path.parts[:1] == ('~',):
+        path = CONTAINER_HOME.joinpath(*path.parts[1:])
+    if not path.is_absolute() or '..' in path.parts or path == PurePosixPath('/'):
+        raise ValueError(f'{field} must be an absolute container path below /')
+    return str(path)
+
+
+def personal_volumes(options):
+    """Bind mounts for on_create_script, extra_mounts, and state_mounts."""
+    volumes, environment = [], {}
+    script = options.get('on_create_script')
+    if script is not None:
+        source = host_path(script, 'on_create_script')
+        if not source.is_file():
+            raise ValueError(f'on_create_script is not a file: {source}')
+        volumes.append(bind(source, ON_CREATE_SCRIPT_TARGET))
+        environment['NO_CRASH_ON_CREATE_SCRIPT'] = ON_CREATE_SCRIPT_TARGET
+
+    extra = options.get('extra_mounts', {})
+    if not isinstance(extra, dict):
+        raise ValueError('extra_mounts must map container paths to {"source": ..., "read_only": ...}')
+    for target, mount in extra.items():
+        field = f'extra_mounts[{target!r}]'
+        if not isinstance(mount, dict) or set(mount) - {'source', 'read_only'}:
+            raise ValueError(f'{field} must be an object with "source" and optional "read_only"')
+        source = host_path(mount.get('source'), f'{field}.source')
+        if not source.exists():
+            raise ValueError(f'{field}.source is missing: {source}')
+        read_only = mount.get('read_only', True)
+        if not isinstance(read_only, bool):
+            raise ValueError(f'{field}.read_only must be true or false')
+        volumes.append(bind(source, container_path(target, field), read_only))
+
+    state = options.get('state_mounts', {})
+    if not isinstance(state, dict):
+        raise ValueError('state_mounts must map container paths to state directory names')
+    for target, name in state.items():
+        field = f'state_mounts[{target!r}]'
+        relative = PurePosixPath(name) if isinstance(name, str) else None
+        if relative is None or not name.strip() or relative.is_absolute() or '..' in relative.parts:
+            raise ValueError(f'{field} must be a relative directory name within {personal_state_dir()}')
+        # main() creates these directories unless this is a dry run.
+        source = personal_state_dir().absolute() / relative
+        volumes.append(bind(source, container_path(target, field), False))
+    return volumes, environment
 
 
 def has_ipv6_loopback():
@@ -86,13 +166,16 @@ def make_override(profile, prebuilt, options, headless=False):
     if personal_config.is_dir():
         service['volumes'].append(bind(personal_config.resolve(), '/home/uas/.config/no_crash'))
     if prebuilt:
-        image = read_personal_json('images.json').get(profile)
+        images = options.get('images', {})
+        if not isinstance(images, dict):
+            raise ValueError('images must map profiles to image references')
+        image = images.get(profile)
         if image is None:
             prefix = os.environ.get('NO_CRASH_IMAGE_PREFIX', 'ghcr.io/utat-uas/no_crash')
-            tag = os.environ.get('NO_CRASH_IMAGE_TAG', '2026-10-27')
+            tag = os.environ.get('NO_CRASH_IMAGE_TAG', '2026-10-28')
             image = f'{prefix}:{tag}-{profile}'
         if not isinstance(image, str) or not image.strip():
-            raise ValueError('images.json references must be nonempty strings')
+            raise ValueError('images references must be nonempty strings')
         service['image'] = image
         service['pull_policy'] = 'missing'
 
@@ -184,6 +267,15 @@ def make_override(profile, prebuilt, options, headless=False):
             {'target': port, 'published': str(port), 'host_ip': ip, 'protocol': 'tcp'}
             for port in PUBLISHED_PORTS for ip in host_ips
         ]
+
+    volumes, environment = personal_volumes(options)
+    service['environment'].update(environment)
+    targets = ['/home/uas/workspace'] + [v['target'] for v in service['volumes']]
+    for volume in volumes:
+        if volume['target'] in targets:
+            raise ValueError(f'Mount target is already used: {volume["target"]}')
+        targets.append(volume['target'])
+        service['volumes'].append(volume)
     # Share one Compose project per profile across checkouts and image sources.
     return {
         'name': f'no_crash_{profile}',
@@ -199,13 +291,18 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     try:
-        options = read_personal_json('runtime-options.json')
-        content = json.dumps(make_override(args.profile, args.prebuilt, options, args.headless), indent=2) + '\n'
+        options = read_runtime_options()
+        override = make_override(args.profile, args.prebuilt, options, args.headless)
+        content = json.dumps(override, indent=2) + '\n'
     except (OSError, ValueError) as error:
         parser.exit(2, f'Host configuration: {error}\n')
     if args.dry_run:
         print(content, end='')
         return
+    state = personal_state_dir().absolute()
+    for volume in override['services']['uas'].get('volumes', []):
+        if Path(volume['source']).is_relative_to(state):
+            Path(volume['source']).mkdir(parents=True, exist_ok=True)
     suffix = '-prebuilt' if args.prebuilt else ''
     destination = ROOT / '.devcontainer/runtime' / f'{args.profile}{suffix}.yaml'
     destination.parent.mkdir(parents=True, exist_ok=True)

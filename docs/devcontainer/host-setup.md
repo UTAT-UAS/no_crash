@@ -92,8 +92,9 @@ See [NVIDIA's CDI guide](https://docs.nvidia.com/datacenter/cloud-native/contain
 for spec generation and `nvidia-ctk cdi list`. On NixOS, enable the distribution's
 NVIDIA container tooling and generated CDI specification.
 
-To select the runtime explicitly, create
-`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/runtime-options.json` on the host:
+To select the runtime explicitly, set `nvidia_mode` in
+`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/runtime-options.json` on the host
+(see [runtime options](custom-software.md)):
 
 ```json
 {"nvidia_mode": "runtime"}
@@ -208,9 +209,9 @@ python3 .devcontainer/scripts/prepare-host.py --profile cpu --headless --dry-run
 
 ## Equipment and networking
 
-Devices are opt-in through `runtime-options.json` in your host's
-`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash` directory, next to
-[`custom-install.sh`](custom-software.md):
+Devices are opt-in through [`runtime-options.json`](custom-software.md) in
+your host's `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash` directory
+([example](example/hardware.json)):
 
 ```json
 {"hardware_devices": ["/dev/ttyACM0", "/dev/video0", "/dev/input/js0"]}
@@ -236,5 +237,6 @@ other machines. VS Code is configured not to forward them as well; remove any
 manual forwards of these ports.
 
 The initializer stops with an error if it finds an options file at the old
-`.devcontainer/runtime-options.json` or `.devcontainer/images.json` location;
-move it to the host configuration directory.
+`.devcontainer/runtime-options.json` location, or an `images.json` file in
+`.devcontainer/` or the host configuration directory. Move options into the
+host `runtime-options.json`; image references belong in its `images` field.

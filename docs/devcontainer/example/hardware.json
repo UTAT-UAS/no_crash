@@ -1,0 +1,4 @@
+{
+  "hardware_devices": ["/dev/ttyACM0", "/dev/ttyUSB0", "/dev/input/js0"],
+  "host_network": true
+}
