@@ -3,8 +3,8 @@
 !.devcontainer/
 !.devcontainer/Dockerfile
 !.devcontainer/versions.env
+!.devcontainer/extras.env
 !.devcontainer/image/
 !.devcontainer/image/**
-.devcontainer/custom-install.sh
 .devcontainer/runtime/**
 .git/**

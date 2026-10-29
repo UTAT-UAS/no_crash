@@ -1,0 +1,11 @@
+{
+  "on_create_script": "on-create.sh",
+  "extra_mounts": {
+    "~/datasets": {"source": "~/datasets"},
+    "~/.ssh": {"source": "~/.ssh", "read_only": true}
+  },
+  "state_mounts": {
+    "~/.claude": "claude",
+    "~/.config/gh": "gh"
+  }
+}

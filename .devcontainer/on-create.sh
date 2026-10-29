@@ -28,8 +28,9 @@ if ! git config --global --get-all safe.directory | grep -Fxq "$workspace"; then
 fi
 
 # Local customization is deliberately never baked into shared images.
-custom_script="${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh"
-if [[ -f $custom_script ]]; then
-    printf 'Running local custom software installer: %s\n' "$custom_script"
+# prepare-host.py mounts runtime-options.json's on_create_script and sets this.
+custom_script=${NO_CRASH_ON_CREATE_SCRIPT:-}
+if [[ -n $custom_script ]]; then
+    printf 'Running local on-create script: %s\n' "$custom_script"
     bash "$custom_script"
 fi

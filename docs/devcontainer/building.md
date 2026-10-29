@@ -105,13 +105,13 @@ repository or release:
 
 ```bash
 NO_CRASH_IMAGE_PREFIX=ghcr.io/your-org/no_crash \
-NO_CRASH_IMAGE_TAG=2026-10-27-r2 ./.devcontainer/push-images.sh all
+NO_CRASH_IMAGE_TAG=2026-10-28-r2 ./.devcontainer/push-images.sh all
 ```
 
 ## Prebuilt images
 
 Prebuilt configurations default to
-`ghcr.io/utat-uas/no_crash:2026-10-27-<profile>` and work once those images are
+`ghcr.io/utat-uas/no_crash:2026-10-28-<profile>` and work once those images are
 published. Choose a prebuilt configuration in VS Code, or run:
 
 ```bash
@@ -119,20 +119,21 @@ published. Choose a prebuilt configuration in VS Code, or run:
 ```
 
 Set `NO_CRASH_IMAGE_PREFIX` and `NO_CRASH_IMAGE_TAG` before starting VS Code or
-`enter.sh` to select another repository/release. Alternatively, create
-`${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/images.json` on the host with
-per-profile references:
+`enter.sh` to select another repository/release. Alternatively, set per-profile
+references in the `images` field of
+[`runtime-options.json`](custom-software.md) on the host
+([example](example/prebuilt-images.json)):
 
 ```json
-{
-  "cpu": "ghcr.io/your-org/no_crash:2026-10-27-cpu",
+{"images": {
+  "cpu": "ghcr.io/your-org/no_crash:2026-10-28-cpu",
   "nvidia": "ghcr.io/your-org/no_crash@sha256:<published-digest>"
-}
+}}
 ```
 
 Use an actual published SHA-256 digest for immutable selection. Setup writes an
 ignored Compose override, leaving tracked configuration files intact.
-Publishing uses prefix/tag settings, rather than `images.json` overrides.
+Publishing uses prefix/tag settings, rather than `images` overrides.
 
 ## Image maintenance
 
@@ -142,6 +143,19 @@ compatibility and match `px4_msgs` to PX4. Rebuild and rerun relevant checks.
 Apt packages follow supported repositories; the pinned base digest does not
 freeze subsequent apt updates. Installed inventories are retained under
 `~/.local/share/no-crash` and in the PX4 checkout.
+
+### Extras layer
+
+Shared developer tools that no image build step depends on, such as `ruff`,
+are installed by `.devcontainer/image/install-extras.sh` as the last layer of
+every profile. (`clang-format` and `clang-tidy` come from the earlier system
+layer.)
+Their release pins and hashes live in `.devcontainer/extras.env` rather than
+`versions.env`. Adding a package there, or bumping a pin, rebuilds only that
+final step, leaving the system, native, and vision layers cached. The script
+copies `extras.env` to `~/.local/share/no-crash`.
+Project tool configuration (`.clang-format`, `.clang-tidy`, `ruff.toml`) belongs
+in each project.
 
 Common profile settings belong in `.devcontainer/scripts/generate-configs.py`;
 regenerate and commit its outputs after changes. To update host tools, run

@@ -14,7 +14,11 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
 
 - Target Ubuntu 24.04, ROS 2 Jazzy, and `linux/amd64`.
 - Keep the ROS base pinned by SHA-256. Record release versions, source commits,
-  download URLs, and checksums in `.devcontainer/versions.env`.
+  download URLs, and checksums in `.devcontainer/versions.env`, except pins for
+  the final extras layer, which live in `.devcontainer/extras.env`.
+- Add shared developer tools that no build step needs (formatters, linters) to
+  `.devcontainer/image/install-extras.sh`. It runs as the last layer of each
+  profile stage, so changes rebuild only that layer. Keep it last.
 - Preserve Jazzy compatibility: Gazebo Harmonic, Micro XRCE-DDS Agent 2.x, and
   NumPy 1.26.4 for the prepared OpenCV wheel and apt-managed `cv_bridge`.
 - Install and compile as the non-root `uas` user whenever possible. Compile in
@@ -41,12 +45,16 @@ interactive shells source `~/workspace/install/local_setup.bash` when it exists.
   Node LTS is available for software that requires it.
 - Project dependencies are managed by their projects. Container lifecycle hooks
   do not discover or install application dependency manifests.
-- Keep personal installs in `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/custom-install.sh`
-  on the host. The host initializer mounts the existing `no_crash` directory
-  read-only at `/home/uas/.config/no_crash`. The script runs through Bash as
-  `uas` on container creation. Host option files (`runtime-options.json`,
-  `images.json`) live in the same host directory; `prepare-host.py` rejects
-  the retired `.devcontainer/` locations. See
+- Personal settings live in `${XDG_CONFIG_HOME:-$HOME/.config}/no_crash/runtime-options.json`
+  on the host: device and network options, `images`, `on_create_script`,
+  `extra_mounts`, and `state_mounts` (read/write under
+  `${XDG_STATE_HOME:-$HOME/.local/state}/no_crash`). The host initializer mounts
+  the existing `no_crash` directory read-only at `/home/uas/.config/no_crash`
+  and the on-create script read-only at `/opt/no_crash/on-create-script`; it runs
+  through Bash as `uas` on container creation. `prepare-host.py` rejects
+  `images.json`, an unconfigured `custom-install.sh`, and the retired
+  `.devcontainer/` locations. Keep examples in `docs/devcontainer/example/`
+  current with the accepted fields. See
   [the customization guide](../docs/devcontainer/custom-software.md).
 - Keep build caches, downloaded archives, and temporary native compilation
   trees out of final images. Preserve development headers and editable PX4

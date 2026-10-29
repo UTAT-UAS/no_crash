@@ -204,31 +204,101 @@ class HostConfigurationTests(unittest.TestCase):
             self.assertIn('/dev/dxg:/dev/dxg', service['devices'])
 
     def test_prebuilt_references_can_be_digest_pinned(self):
-        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+        with fake_host():
             image = 'ghcr.io/example/no_crash@sha256:' + 'a' * 64
-            (root / 'no_crash').mkdir()
-            (root / 'no_crash/images.json').write_text(json.dumps({'cpu': image}))
-            service = host.make_override('cpu', True, {})['services']['uas']
+            service = host.make_override('cpu', True, {'images': {'cpu': image}})['services']['uas']
             self.assertEqual(service['image'], image)
             self.assertNotIn('build', service)
+            with self.assertRaisesRegex(ValueError, 'nonempty strings'):
+                host.make_override('cpu', True, {'images': {'cpu': ''}})
 
     def test_option_files_are_read_from_personal_config(self):
         with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
-            self.assertEqual(host.read_personal_json('runtime-options.json'), {})
+            self.assertEqual(host.read_runtime_options(), {})
             (root / 'no_crash').mkdir()
             (root / 'no_crash/runtime-options.json').write_text('{"nvidia_mode": "cdi"}')
-            self.assertEqual(host.read_personal_json('runtime-options.json'), {'nvidia_mode': 'cdi'})
-            (root / 'no_crash/images.json').write_text('[]')
+            self.assertEqual(host.read_runtime_options(), {'nvidia_mode': 'cdi'})
+            (root / 'no_crash/runtime-options.json').write_text('[]')
             with self.assertRaisesRegex(ValueError, 'must contain an object'):
-                host.read_personal_json('images.json')
+                host.read_runtime_options()
 
     def test_retired_option_file_locations_fail_with_new_path(self):
-        for name in ('runtime-options.json', 'images.json'):
-            with self.subTest(name=name), fake_host() as root, \
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            (root / '.devcontainer/runtime-options.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, str(root / 'no_crash/runtime-options.json')):
+                host.read_runtime_options()
+        for location in ('.devcontainer', 'no_crash'):
+            with self.subTest(location=location), fake_host() as root, \
                     patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
-                (root / '.devcontainer' / name).write_text('{}')
-                with self.assertRaisesRegex(ValueError, str(root / 'no_crash' / name)):
-                    host.read_personal_json(name)
+                (root / 'no_crash').mkdir()
+                (root / location / 'images.json').write_text('{}')
+                with self.assertRaisesRegex(ValueError, '"images" in runtime-options.json'):
+                    host.read_runtime_options()
+
+    def test_retired_custom_installer_requires_explicit_option(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            (root / 'no_crash').mkdir()
+            (root / 'no_crash/custom-install.sh').write_text(': \n')
+            with self.assertRaisesRegex(ValueError, '"on_create_script": "custom-install.sh"'):
+                host.read_runtime_options()
+            (root / 'no_crash/runtime-options.json').write_text('{"on_create_script": "custom-install.sh"}')
+            self.assertEqual(host.read_runtime_options(), {'on_create_script': 'custom-install.sh'})
+
+    def test_on_create_script_is_mounted_read_only(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            (root / 'no_crash').mkdir()
+            script = root / 'no_crash/setup.sh'
+            script.write_text(': \n')
+            for value in ('setup.sh', str(script)):
+                with self.subTest(value=value):
+                    service = host.make_override('cpu', False, {'on_create_script': value})['services']['uas']
+                    self.assertIn(host.bind(script.resolve(), host.ON_CREATE_SCRIPT_TARGET), service['volumes'])
+                    self.assertEqual(service['environment']['NO_CRASH_ON_CREATE_SCRIPT'],
+                                     host.ON_CREATE_SCRIPT_TARGET)
+            with self.assertRaisesRegex(ValueError, 'not a file'):
+                host.make_override('cpu', False, {'on_create_script': 'missing.sh'})
+            service = host.make_override('cpu', False, {})['services']['uas']
+            self.assertNotIn('NO_CRASH_ON_CREATE_SCRIPT', service.get('environment', {}))
+
+    def test_extra_mounts_default_to_read_only(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            data = root / 'datasets'
+            data.mkdir()
+            options = {'extra_mounts': {
+                '~/datasets': {'source': str(data)},
+                '/mnt/scratch': {'source': str(data), 'read_only': False},
+            }}
+            volumes = host.make_override('cpu', False, options)['services']['uas']['volumes']
+            self.assertIn(host.bind(data.resolve(), '/home/uas/datasets'), volumes)
+            self.assertIn(host.bind(data.resolve(), '/mnt/scratch', False), volumes)
+
+    def test_invalid_extra_mounts_fail(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_CONFIG_HOME': str(root)}):
+            cases = [
+                ({'/data': {'source': str(root / 'missing')}}, 'source is missing'),
+                ({'relative': {'source': str(root)}}, 'absolute container path'),
+                ({'/data/../etc': {'source': str(root)}}, 'absolute container path'),
+                ({'/data': str(root)}, 'must be an object'),
+                ({'/data': {'source': str(root), 'read_only': 'yes'}}, 'true or false'),
+                ({'/home/uas/workspace': {'source': str(root)}}, 'already used'),
+            ]
+            for mounts, message in cases:
+                with self.subTest(mounts=mounts), self.assertRaisesRegex(ValueError, message):
+                    host.make_override('cpu', False, {'extra_mounts': mounts})
+
+    def test_state_mounts_use_xdg_state_home_read_write(self):
+        with fake_host() as root, patch.dict(os.environ, {'XDG_STATE_HOME': str(root / 'state')}):
+            options = {'state_mounts': {'~/.claude': 'claude', '/home/uas/.cache/tool': 'cache/tool'}}
+            volumes = host.make_override('cpu', False, options)['services']['uas']['volumes']
+            self.assertIn(host.bind(root / 'state/no_crash/claude', '/home/uas/.claude', False), volumes)
+            self.assertIn(host.bind(root / 'state/no_crash/cache/tool', '/home/uas/.cache/tool', False), volumes)
+            self.assertFalse((root / 'state').exists())  # Only main() creates directories.
+            for name in ('../escape', '/absolute', '', 3):
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'relative directory'):
+                    host.make_override('cpu', False, {'state_mounts': {'/data': name}})
+            with self.assertRaisesRegex(ValueError, 'already used'):
+                host.make_override('cpu', False, {'state_mounts': {'/data': 'a'},
+                                                  'extra_mounts': {'/data': {'source': str(root)}}})
 
     def test_visualizer_ports_are_published_on_loopback_only(self):
         def published(service):
@@ -356,11 +426,11 @@ with open(os.environ['NO_CRASH_TEST_COMMANDS'], 'a') as stream:
 
 
 class ValidationScopeTests(unittest.TestCase):
-    def test_project_environments_and_personal_installers_are_excluded(self):
+    def test_project_environments_are_excluded(self):
         with tempfile.TemporaryDirectory(prefix='no-crash-validation-') as directory:
             root = Path(directory)
             paths = ['.devcontainer/scripts/check.py', '.devcontainer/image/setup.sh',
-                     '.devcontainer/image/bin/tool', '.devcontainer/custom-install.sh',
+                     '.devcontainer/image/bin/tool', '.devcontainer/on-create.sh',
                      'flight_visualizer/backend/.venv/dependency.py', 'hardware_manager/tool.sh',
                      'enter.sh']
             for name in paths:
@@ -370,7 +440,8 @@ class ValidationScopeTests(unittest.TestCase):
             python, shell = validator.source_files(root)
             self.assertEqual(python, [root / '.devcontainer/scripts/check.py'])
             self.assertEqual(set(shell), {root / '.devcontainer/image/setup.sh',
-                                          root / '.devcontainer/image/bin/tool', root / 'enter.sh'})
+                                          root / '.devcontainer/image/bin/tool',
+                                          root / '.devcontainer/on-create.sh', root / 'enter.sh'})
 
 
 class ImageHelperTests(unittest.TestCase):
@@ -573,6 +644,8 @@ class LifecycleTests(unittest.TestCase):
         (self.home / '.bashrc').write_text('# My settings\n')
         self.environment = {**os.environ, 'HOME': str(self.home), 'GIT_CONFIG_GLOBAL': str(self.home / '.gitconfig')}
         self.environment.pop('XDG_CONFIG_HOME', None)
+        # prepare-host.py sets this for the mounted on_create_script.
+        self.environment['NO_CRASH_ON_CREATE_SCRIPT'] = str(self.personal_config / 'setup.sh')
 
     def tearDown(self):
         self.directory.cleanup()
@@ -582,6 +655,7 @@ class LifecycleTests(unittest.TestCase):
                               env=self.environment, capture_output=True, text=True)
 
     def test_missing_custom_script_and_repeated_setup(self):
+        self.environment.pop('NO_CRASH_ON_CREATE_SCRIPT')
         for _ in range(2):
             result = self.run_hook()
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -592,39 +666,24 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue((self.home / '.hushlogin').is_file())
 
     def test_custom_script_runs_through_bash_in_workspace(self):
-        (self.personal_config / 'custom-install.sh').write_text('printf "%s\\n" "$PWD" > custom-result\n')
+        (self.personal_config / 'setup.sh').write_text('printf "%s\\n" "$PWD" > custom-result\n')
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.workspace / 'custom-result').read_text().strip(), str(self.workspace))
 
     def test_custom_script_failure_is_visible(self):
-        (self.personal_config / 'custom-install.sh').write_text('exit 23\n')
+        (self.personal_config / 'setup.sh').write_text('exit 23\n')
         self.assertEqual(self.run_hook().returncode, 23)
 
-    def test_custom_script_uses_explicit_xdg_config_home(self):
-        config_home = self.home / 'custom config'
-        (config_home / 'no_crash').mkdir(parents=True)
-        (config_home / 'no_crash/custom-install.sh').write_text(': > custom-result\n')
+    def test_unconfigured_scripts_are_skipped(self):
+        self.environment.pop('NO_CRASH_ON_CREATE_SCRIPT')
         (self.personal_config / 'custom-install.sh').write_text('exit 23\n')
-        self.environment['XDG_CONFIG_HOME'] = str(config_home)
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.workspace / 'custom-result').is_file())
-
-    def test_empty_xdg_config_home_uses_default(self):
-        self.environment['XDG_CONFIG_HOME'] = ''
-        (self.personal_config / 'custom-install.sh').write_text(': > custom-result\n')
-        result = self.run_hook()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.workspace / 'custom-result').is_file())
-
-    def test_legacy_workspace_installer_is_skipped(self):
         (self.config / 'custom-install.sh').write_text('exit 23\n')
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_creation_and_future_shells_reset_inherited_umask(self):
-        (self.personal_config / 'custom-install.sh').write_text(': > custom-result\n')
+        (self.personal_config / 'setup.sh').write_text(': > custom-result\n')
         result = subprocess.run(
             ['bash', '-c', 'umask 0000; exec bash "$1"', 'umask-test',
              str(self.config / 'on-create.sh')],

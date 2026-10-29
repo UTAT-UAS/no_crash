@@ -1,0 +1,18 @@
+{
+  "nvidia_mode": "auto",
+  "hardware_devices": ["/dev/ttyACM0", "/dev/video0"],
+  "host_network": false,
+  "images": {
+    "cpu": "ghcr.io/utat-uas/no_crash:2026-10-28-cpu",
+    "nvidia": "ghcr.io/utat-uas/no_crash:2026-10-28-nvidia"
+  },
+  "on_create_script": "on-create.sh",
+  "extra_mounts": {
+    "~/datasets": {"source": "~/datasets", "read_only": true},
+    "/mnt/flight-logs": {"source": "/srv/flight-logs", "read_only": false}
+  },
+  "state_mounts": {
+    "~/.claude": "claude",
+    "~/.config/gh": "gh"
+  }
+}
