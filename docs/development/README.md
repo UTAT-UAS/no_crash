@@ -38,6 +38,7 @@ processes. Build the ROS workspace first; run it from anywhere.
 | `sim sitl start [--no-gui] [--no-core] [--real]` | Start MicroXRCEAgent, Gazebo, its GUI, PX4 SITL and `flight_core` (`mode:=sim`, or `mode:=real` with `--real`, which rejects arming); wait until ready |
 | `sim sitl restart` | Restart PX4 with fresh parameters and respawn the drone at the origin; Gazebo, the GUI and the agent keep running, and `flight_core` is restarted in the same mode if it was running |
 | `sim sitl run [start options] -- <command>` | Start, run the command, stop; exit with the command's status |
+| `sim sitl gui` | Open the Gazebo GUI on the running simulation, e.g. one started with `--no-gui`; closing it leaves the simulation running |
 | `sim sitl px4 <module> [args]` | PX4 shell command, e.g. `sim sitl px4 param show NAV_DLL_ACT` or `sim sitl px4 commander takeoff` |
 | `sim viz start [--no-bridge] [--no-backend] [--no-frontend]` | Start `flight_visualizer_bridge`, the backend (port 8000) and the frontend dev server (port 5173); wait until ready |
 | `sim viz restart` | Restart the running visualizer components |

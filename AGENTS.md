@@ -33,6 +33,10 @@ remains at `install/`. Avoid introducing nested repository imports.
   changes; see `docs/development/README.md#linting-and-formatting`.
 - Run checks relevant to the changed project. Distinguish syntax checks,
   compilation, runtime tests, and hardware tests when reporting results.
+- Pass `--no-gui` to `scripts/sim sitl start` or `scripts/sim sitl run` unless
+  the user asked to watch the simulation; the Gazebo GUI is only needed for
+  visual observation. `scripts/sim sitl gui` opens it later on a running
+  simulation.
 
 ## Documentation and environment work
 

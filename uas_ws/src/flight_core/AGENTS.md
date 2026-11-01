@@ -17,6 +17,7 @@ implementation detail here.
   holder and enters `HOLD` if the position is valid.
 - The `mode` parameter (`sim|real`, default `real`) is read-only. Real mode
   rejects `ARM` with "Arming is disabled in real mode; arm from the RC or GCS".
+  `CoreState.sim_mode` publishes it so clients can tell.
 - PX4 topics are versioned: `/fmu/out/vehicle_status_v1` and
   `/fmu/out/vehicle_local_position_v1`; others have no suffix. PX4 publishes
   best effort, so subscribe with `SensorDataQoS` / `qos_profile_sensor_data`.
@@ -72,6 +73,9 @@ implementation detail here.
 - `_core_state` is the last state this client set (None at first); `goto()`
   and `trajectory()` switch state only when it differs. `land()` and
   `position_mode()` set it to `HOLD` to match the core.
+- `arm()` checks `CoreState.sim_mode` (`acquire()` waits for a core state).
+  In real mode it sends nothing and waits `pilot_timeout` for the pilot to
+  arm; the bridge passes `pilot_timeout=0.0` so its arm command never blocks.
 - `land(wait=True)` waits for `vehicle_land_detected.landed`, disarms unless
   PX4 already auto-disarmed, then calls `position_mode()`.
 - On context exit, the client calls `hold()` only if offboard and armed, then
@@ -111,7 +115,7 @@ colcon test --base-paths uas_ws/src --packages-select flight_core
 colcon test-result --verbose --test-result-base /build/colcon/build/flight_core
 python3 -m py_compile uas_ws/src/flight_core/flight_core/client.py
 scripts/lint
-scripts/sim sitl run -- ros2 run flight_core example_mission
+scripts/sim sitl run --no-gui -- ros2 run flight_core example_mission
 ```
 
 Use `scripts/sim sitl` for runtime checks (`start`, `restart`, `px4

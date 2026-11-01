@@ -13,6 +13,9 @@
 #       same mode, if running.
 #   sim sitl run [start options] -- <command...>
 #       Start, run the command, stop; exits with the command's status.
+#   sim sitl gui
+#       Open the Gazebo GUI on the running simulation, e.g. after --no-gui.
+#       Closing its window leaves the simulation running.
 #   sim sitl px4 <module> [args...]
 #       PX4 shell command, e.g. `sim sitl px4 param show NAV_DLL_ACT`.
 #
@@ -251,6 +254,22 @@ sitl_run() {
     return "$status"
 }
 
+sitl_gui() {
+    is_running gz || die "Gazebo is not running; use 'sim sitl start'"
+    is_running gui && die "the Gazebo GUI is already running (pid $(pid_of gui))"
+    sitl_env
+    echo "Starting the Gazebo GUI"
+    spawn gui gz sim -g
+    # The GUI has no readiness message; catch an immediate failure, e.g. no
+    # display.
+    sleep 2
+    if ! is_running gui; then
+        tail -n 40 "$LOGS/gui.log" >&2 || true
+        die "the Gazebo GUI exited; see $LOGS/gui.log"
+    fi
+    echo "Gazebo GUI running. Log: $LOGS/gui.log"
+}
+
 sitl_px4() {
     (( $# )) || die "usage: sim sitl px4 <module> [args...]"
     local module=$1
@@ -395,7 +414,7 @@ shift $(( $# < 2 ? $# : 2 ))
 case $group:$command in
     *:stop) cmd_stop ;;
     *:status) cmd_status ;;
-    sitl:start | sitl:restart | sitl:run | sitl:px4 | viz:start | viz:restart)
+    sitl:start | sitl:restart | sitl:run | sitl:gui | sitl:px4 | viz:start | viz:restart)
         "${group}_$command" "$@" ;;
     *) die "unknown $group command '$command'; see 'sim --help'" ;;
 esac

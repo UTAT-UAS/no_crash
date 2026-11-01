@@ -21,8 +21,8 @@ listed in [flight_core_interfaces](../flight_core_interfaces/README.md).
 | `GOTO` | The latest `goto` target; starts at the current position |
 | `TRAJECTORY` | The latest `trajectory` setpoint; starts at the current position |
 
-`/flight_core/out/core_state` reports the state, the lease holder and the
-current state's target position. The offboard heartbeat is always published, so offboard can be selected from
+`/flight_core/out/core_state` reports the state, whether the core is in sim
+mode, the lease holder and the current state's target position. The offboard heartbeat is always published, so offboard can be selected from
 the RC at any time and the vehicle holds where it is. Setpoints are published
 only while PX4 is in offboard. A `goto` or `trajectory` target saved before
 offboard is flown as soon as offboard engages.
@@ -38,7 +38,8 @@ offboard is flown as soon as offboard engages.
   ```
 
 - The `mode` parameter is `sim` or `real` (default). In real mode the core
-  refuses to arm; arm from the RC or GCS before starting a script.
+  refuses to arm; arm from the RC or GCS. `arm()` and `takeoff()` wait for
+  the pilot to arm instead.
 - Finish an offboard flight with `land()`. A plain disarm while holding on the
   ground in offboard is refused by PX4.
 
@@ -57,10 +58,11 @@ with Drone('survey') as drone:     # acquires control; on exit holds (if flying)
 | Call | Effect |
 |---|---|
 | `reacquire()` | Reset the lease, taking control from any holder (the core goes `HOLD`), then acquire it |
-| `arm()`, `disarm()` | Command and wait for PX4 to confirm |
+| `arm(timeout=5, pilot_timeout=60)` | Sim: command arm and wait. Real: wait up to `pilot_timeout` s for the pilot to arm (`<= 0` raises at once) |
+| `disarm()` | Command and wait for PX4 to confirm |
 | `offboard_mode()` | Switch to offboard and wait |
 | `position_mode()` | Switch to PX4 position mode and wait; the core goes `HOLD` |
-| `takeoff(altitude)` | `HOLD`, offboard, arm if needed (sim only), goto `altitude` m above the current position |
+| `takeoff(altitude)` | `HOLD`, offboard, arm if needed (real: wait for the pilot), goto `altitude` m above the current position |
 | `goto(x, y, z, heading=None, max_speed=None, wait=True, tolerance=0.3)` | Enter `GOTO` if needed and fly to a NED position. `heading=None` keeps the current heading |
 | `trajectory(position=None, velocity=None, acceleration=None, yaw=None, yawspeed=None)` | Enter `TRAJECTORY` if needed and set the setpoint (None = uncontrolled). Returns immediately |
 | `hold()` | Enter `HOLD` |
@@ -68,7 +70,7 @@ with Drone('survey') as drone:     # acquires control; on exit holds (if flying)
 | `land(wait=True)` | PX4 land; the core goes `HOLD`. With `wait`, waits until landed, disarms and switches to position mode |
 | `wait_until(predicate, timeout)` | Poll a condition |
 | `position`, `velocity`, `heading`, `is_armed`, `is_offboard`, `is_landed`, `status` | Latest PX4 state |
-| `core_state` | Latest `CoreState` from flight_core |
+| `core_state`, `is_sim` | Latest `CoreState` from flight_core; whether it is in sim mode |
 
 Rejected commands and timeouts raise `ControlError`.
 

@@ -40,7 +40,8 @@ COMMANDS: dict[str, Callable[..., None]] = {
     'reacquire': Drone.reacquire,
     'release': Drone.release,
     'hold': Drone.hold,
-    'arm': Drone.arm,
+    # Fail at once in real mode instead of waiting for the pilot to arm.
+    'arm': lambda drone: drone.arm(pilot_timeout=0.0),
     'disarm': Drone.disarm,
     'offboard': Drone.offboard_mode,
     'position': Drone.position_mode,
@@ -109,6 +110,7 @@ class BridgeDrone(Drone):
         if (core := self._core_status) is not None:
             state.core_state = CORE_STATES.get(core.state, pb.CORE_STATE_UNKNOWN)
             state.lease_holder = core.lease_holder
+            state.sim_mode = core.sim_mode
             _set_vector(state.target, core.target_position)
         return state
 
