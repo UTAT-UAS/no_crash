@@ -9,6 +9,11 @@ TCP. It streams vehicle and core state, and forwards visualizer commands to
 flight_core / PX4 ◀──ROS──▶ flight_visualizer_bridge ◀──TCP (4G)──▶ backend ◀──WebSocket──▶ browser
 ```
 
+Messages are protocol buffers defined in
+[`proto/flight_visualizer.proto`](proto/flight_visualizer.proto); colcon
+generates the Python module, so `protoc` (`protobuf-compiler`) must be
+installed.
+
 ```bash
 ros2 run flight_visualizer_bridge flight_visualizer_bridge
 ros2 run flight_visualizer_bridge flight_visualizer_bridge --ros-args -p port:=8765 -p rate_hz:=5.0
@@ -18,7 +23,7 @@ ros2 run flight_visualizer_bridge flight_visualizer_bridge --ros-args -p port:=8
 |---|---|---|
 | `host` | `0.0.0.0` | Listen address |
 | `port` | `8765` | TCP port the backend connects to |
-| `rate_hz` | `5.0` | State messages per second (about 230 bytes each) |
+| `rate_hz` | `5.0` | State messages per second (about 100 bytes each) |
 
 Commands: `acquire`, `reacquire`, `release`, `hold`, `arm`, `disarm`,
 `offboard`, `position`, `land` and `goto [x, y, z]` (NED metres). Commands

@@ -12,3 +12,6 @@ node_modules/
 *.bin
 *.log
 compile_commands.json
+# Generated from uas_ws/src/flight_visualizer_bridge/proto.
+*_pb2.py
+*_pb2.pyi

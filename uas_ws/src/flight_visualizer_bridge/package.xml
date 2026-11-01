@@ -7,10 +7,13 @@
   <maintainer email="contact@utat.ca">UTAT UAS</maintainer>
   <license>GPL-3.0-only</license>
 
+  <buildtool_depend>protobuf-dev</buildtool_depend>
+
   <exec_depend>rclpy</exec_depend>
   <exec_depend>flight_core</exec_depend>
   <exec_depend>flight_core_interfaces</exec_depend>
   <exec_depend>px4_msgs</exec_depend>
+  <exec_depend>python3-protobuf</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

@@ -2,7 +2,8 @@
   // Imports resolve through the active ROS environment (PYTHONPATH), so source
   // /opt/ros/jazzy and install/local_setup.bash first; scripts/lint does.
   "include": ["src"],
-  "exclude": ["src/px4_msgs", "**/__pycache__"],
+  // Generated protobuf modules (flight_visualizer_bridge/setup.py).
+  "exclude": ["src/px4_msgs", "**/__pycache__", "**/*_pb2.py", "**/*_pb2.pyi"],
   "pythonVersion": "3.12",
   // rclpy ships py.typed but re-exports ok(), init() and friends without
   // __all__ or `as` aliases, so pyright treats its documented API as private.

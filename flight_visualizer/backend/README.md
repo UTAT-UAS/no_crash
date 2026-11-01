@@ -7,6 +7,7 @@ go to the bridge. `GET /api/state` returns the link status and latest state.
 
 ```bash
 cd ~/workspace/flight_visualizer/backend
+uv sync && ./generate.sh   # once, and after the .proto changes
 uv run uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 

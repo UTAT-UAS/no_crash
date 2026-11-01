@@ -1,10 +1,16 @@
 <script lang="ts">
 	// Top-down map (North up, East right) and altimeter. Positions are PX4 local
-	// NED metres; values outside the bounds are drawn at the edge.
-	type Vector = (number | null)[] | null;
+	// NED metres; values outside the bounds are drawn at the edge. Unset or NaN
+	// values are not drawn.
+	import type { Vector3 } from '#lib/gen/flight_visualizer_pb.js';
 
-	let { position, heading, target }: { position: Vector; heading: number | null; target: Vector } =
-		$props();
+	type Vector = Vector3 | undefined;
+
+	let {
+		position,
+		heading,
+		target
+	}: { position: Vector; heading: number | undefined; target: Vector } = $props();
 
 	const HALF_WIDTH = 10; // map spans ±10 m North and East of the origin
 	const MAX_ALTITUDE = 10;
@@ -18,16 +24,16 @@
 
 	// [north, east] in metres to SVG [x, y], or null if not known.
 	function mapPoint(v: Vector): [number, number] | null {
-		if (!v || v[0] === null || v[1] === null) return null;
-		const north = clamp(v[0], -HALF_WIDTH, HALF_WIDTH);
-		const east = clamp(v[1], -HALF_WIDTH, HALF_WIDTH);
+		if (!v || Number.isNaN(v.x) || Number.isNaN(v.y)) return null;
+		const north = clamp(v.x, -HALF_WIDTH, HALF_WIDTH);
+		const east = clamp(v.y, -HALF_WIDTH, HALF_WIDTH);
 		return [(east + HALF_WIDTH) * scale, (HALF_WIDTH - north) * scale];
 	}
 
 	// Altitude (up = -down) to SVG y, or null if not known.
 	function altitudeY(v: Vector): number | null {
-		if (!v || v[2] === null) return null;
-		return ALT_HEIGHT - (clamp(-v[2], 0, MAX_ALTITUDE) / MAX_ALTITUDE) * ALT_HEIGHT;
+		if (!v || Number.isNaN(v.z)) return null;
+		return ALT_HEIGHT - (clamp(-v.z, 0, MAX_ALTITUDE) / MAX_ALTITUDE) * ALT_HEIGHT;
 	}
 
 	let drone = $derived(mapPoint(position));
@@ -56,7 +62,7 @@
 		{/if}
 		{#if drone}
 			<circle cx={drone[0]} cy={drone[1]} r="5" class="drone" />
-			{#if heading !== null}
+			{#if heading !== undefined && !Number.isNaN(heading)}
 				<line
 					x1={drone[0]}
 					y1={drone[1]}

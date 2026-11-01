@@ -7,7 +7,8 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"generate": "mkdir -p src/lib/gen && protoc --plugin=protoc-gen-es=node_modules/.bin/protoc-gen-es --proto_path=../../../uas_ws/src/flight_visualizer_bridge/proto --es_out=src/lib/gen --es_opt=target=ts flight_visualizer.proto",
+		"prepare": "bun run generate && (svelte-kit sync || echo '')",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
@@ -17,6 +18,7 @@
 		"test:e2e": "playwright install && playwright test"
 	},
 	"devDependencies": {
+		"@bufbuild/protoc-gen-es": "^2.16.0",
 		"@eslint/js": "^10.0.1",
 		"@playwright/test": "^1.60.0",
 		"@sveltejs/adapter-auto": "^8.0.0",
@@ -42,5 +44,8 @@
 	"imports": {
 		"#lib": "./src/lib/index.js",
 		"#lib/*": "./src/lib/*"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.16.0"
 	}
 }

@@ -1,0 +1,69 @@
+// Protocol between flight_visualizer_bridge, the flight visualizer backend and
+// the dashboard. The bridge and backend exchange these messages in binary over
+// TCP, each frame prefixed by its length as a 4-byte big-endian uint32. The
+// backend and browsers exchange their proto3 JSON form over a WebSocket.
+//
+// Unset fields and absent submessages mean the value has not been received.
+syntax = "proto3";
+
+package flight_visualizer;
+
+// PX4 local NED metres (or metres per second). Components may be NaN.
+message Vector3 {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// flight_core_interfaces/CoreState state values.
+enum CoreStateKind {
+  CORE_STATE_UNKNOWN = 0;
+  HOLD = 1;
+  GOTO = 2;
+  TRAJECTORY = 3;
+}
+
+// Vehicle and core state, sent by the bridge every 1 / rate_hz seconds.
+message State {
+  optional bool armed = 1;
+  // PX4 navigation state name, e.g. "OFFBOARD".
+  optional string mode = 2;
+  optional bool landed = 3;
+  Vector3 position = 4;
+  Vector3 velocity = 5;
+  // Radians from North.
+  optional float heading = 6;
+  optional CoreStateKind core_state = 7;
+  optional string lease_holder = 8;
+  // CoreState.target_position, the current core state's setpoint.
+  Vector3 target = 9;
+}
+
+// Outcome of one command.
+message Result {
+  uint32 id = 1;
+  bool ok = 2;
+  optional string error = 3;
+}
+
+// A command for the bridge, e.g. name "goto" with args [x, y, z].
+message Command {
+  uint32 id = 1;
+  string name = 2;
+  repeated double args = 3;
+}
+
+// Bridge -> backend (and backend -> browser).
+message BridgeMessage {
+  oneof message {
+    State state = 1;
+    Result result = 2;
+  }
+}
+
+// Backend -> bridge (and browser -> backend).
+message BackendMessage {
+  oneof message {
+    Command command = 1;
+  }
+}

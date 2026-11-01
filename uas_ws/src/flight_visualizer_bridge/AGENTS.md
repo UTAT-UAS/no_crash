@@ -5,20 +5,33 @@ and design detail here.
 
 ## Protocol
 
-One TCP connection, served by the bridge; a new connection replaces the old
-one. Both directions carry newline-delimited compact JSON. Keep
-`flight_visualizer/backend/app.py` and the frontend page in step with changes.
+[`proto/flight_visualizer.proto`](proto/flight_visualizer.proto) is the single
+source of truth. The bridge, backend and frontend each generate code from it
+(none of it is committed):
 
-- Bridge → backend, every `1 / rate_hz` s:
-  `{"type":"state","armed":bool,"mode":"OFFBOARD","landed":bool,"position":[x,y,z],"velocity":[vx,vy,vz],"heading":rad,"core_state":"HOLD","lease_holder":"name","target":[x,y,z]}`.
-  `target` is `CoreState.target_position`, the current state's setpoint.
-  Fields are null until the source topic has been received; non-finite
-  numbers become null (NaN is not valid JSON). Numbers are rounded to 0.01.
-  About 230 bytes, so the default 5 Hz is roughly 1.1 KB/s (4 MB/hour).
-- Bridge → backend, once per command:
-  `{"type":"result","id":<command id>,"ok":bool,"error":str|null}`.
-- Backend → bridge: `{"type":"command","id":<any>,"name":"goto","args":[x,y,z]}`.
-  `args` may be omitted.
+- Bridge: `setup.py` runs the system `protoc` (apt `protobuf-compiler`) on every
+  colcon build, writing `flight_visualizer_pb2.py(i)` into the package.
+- Backend: `flight_visualizer/backend/generate.sh` (grpcio-tools' protoc).
+- Frontend: `bun run generate` (`protoc-gen-es`), also run by `bun install`.
+
+After changing the `.proto`, rebuild and regenerate all three. Only add
+fields; renumbering or reusing field numbers breaks a bridge and backend that
+are not updated together.
+
+One TCP connection, served by the bridge; a new connection replaces the old
+one. Each frame is a 4-byte big-endian uint32 length followed by a serialized
+message; frames over 64 KiB (`MAX_FRAME`) drop the connection.
+
+- Bridge → backend: `BridgeMessage` with a `State` every `1 / rate_hz` s, and a
+  `Result` once per command. `State.target` is `CoreState.target_position`,
+  the current state's setpoint. Fields and submessages are unset until their
+  source topic has been received; floats may be NaN. A state frame is about
+  100 bytes, so the default 5 Hz is roughly 0.5 KB/s (1.8 MB/hour).
+- Backend → bridge: `BackendMessage` with a `Command`, e.g. name `goto` with
+  args `[x, y, z]`.
+
+The backend relays these to browsers as proto3 JSON
+(`preserving_proto_field_name`); see the backend's agent guide.
 
 ## Design
 
@@ -34,7 +47,8 @@ one. Both directions carry newline-delimited compact JSON. Keep
 - A send blocked for `SEND_TIMEOUT` drops the connection; the backend
   reconnects. A failed snapshot is logged and streaming continues.
 - Fixed-size message arrays (`float32[3]`) arrive as numpy arrays; convert
-  elements with `float()` before JSON encoding (`_rounded` does).
+  elements with `float()` before assigning them to protobuf fields
+  (`_set_vector` does).
 - The accept loop polls with a timeout and exits when Ctrl-C shuts down the
   ROS context. rclpy's SIGINT handler does not interrupt a blocking
   `accept()`.
@@ -49,4 +63,5 @@ scripts/sitl start
 ros2 run flight_visualizer_bridge flight_visualizer_bridge
 ```
 
-Then connect with the backend, or with a raw socket and send command lines.
+Then connect with the backend, or with a raw socket sending length-prefixed
+`BackendMessage` frames.

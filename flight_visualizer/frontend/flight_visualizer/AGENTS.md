@@ -6,20 +6,32 @@ User-facing usage is in [README.md](README.md). Keep it lean; put detail here.
 
 - `src/routes/+page.svelte`: the dashboard. It opens one WebSocket to `/ws`
   (`wss` on https), reconnects every second, shows link status, state as text
-  and the last command result, and sends `{"id", "name", "args"}` commands.
-- `src/lib/PositionMap.svelte`: SVG map and altimeter. The map is North up,
+  and the last command result, and sends `Command`s.
+- `src/lib/gen/` (ignored): TypeScript generated from the bridge's
+  `flight_visualizer.proto` by `bun run generate` (system `protoc` with
+  `@bufbuild/protoc-gen-es`). `bun install` runs it through `prepare`; rerun
+  it after the `.proto` changes. Import it as
+  `#lib/gen/flight_visualizer_pb.js`; the `#lib/*` import map does not add
+  extensions.
+- `src/lib/PositionMap.svelte`: SVG map and altimeter, taking `Vector3`s. The map is North up,
   East right, ±10 m around the origin (`HALF_WIDTH`). The altimeter spans
   0–10 m (`MAX_ALTITUDE`). Positions are PX4 local NED, so altitude is `-z`.
-  Values outside the bounds are drawn at the edge.
+  Values outside the bounds are drawn at the edge; unset or NaN values are
+  not drawn.
 - `vite.config.ts`: the dev server proxies `/ws` to the backend at
   `127.0.0.1:8000`. `server.host: true` makes it listen on the container's
   interfaces, which Docker's published port needs.
 - `src/lib/vitest-examples/` and `src/routes/page.svelte.e2e.ts` are scaffold
   examples.
 
-Message shapes come from the bridge protocol in
-[`flight_visualizer_bridge/AGENTS.md`](../../../uas_ws/src/flight_visualizer_bridge/AGENTS.md#protocol);
-keep the `State` type in `+page.svelte` in step with it. Fields can be null.
+Message types come from the generated code. The backend sends proto3 JSON:
+`{"link":{"connected":bool}}` is its own, and everything else is parsed with
+`fromJson(BridgeMessageSchema, ...)`. Commands are sent as
+`toJson(BackendMessageSchema, ...)`. Generated fields are camelCase
+(`coreState`, `leaseHolder`); `optional` fields and submessages can be
+`undefined`, and floats can be NaN. See the
+[bridge protocol](../../../uas_ws/src/flight_visualizer_bridge/AGENTS.md#protocol)
+and the backend's agent guide.
 
 ## Conventions
 

@@ -1,20 +1,15 @@
 <script lang="ts">
+	import { create, fromJson, toJson } from '@bufbuild/protobuf';
 	import { onMount } from 'svelte';
 	import PositionMap from '#lib/PositionMap.svelte';
-
-	// Messages from the backend, as sent by flight_visualizer_bridge.
-	type State = {
-		armed: boolean | null;
-		mode: string | null;
-		landed: boolean | null;
-		position: (number | null)[] | null;
-		velocity: (number | null)[] | null;
-		heading: number | null;
-		core_state: string | null;
-		lease_holder: string | null;
-		target: (number | null)[] | null;
-	};
-	type Result = { id: number; ok: boolean; error: string | null };
+	import {
+		BackendMessageSchema,
+		BridgeMessageSchema,
+		CoreStateKind,
+		type Result,
+		type State,
+		type Vector3
+	} from '#lib/gen/flight_visualizer_pb.js';
 
 	const commands = [
 		'acquire',
@@ -48,17 +43,22 @@
 			setTimeout(connect, 1000);
 		};
 		socket.onmessage = (event) => {
-			const message = JSON.parse(event.data);
-			if (message.type === 'link') bridgeConnected = message.connected;
-			else if (message.type === 'state') vehicle = message;
-			else if (message.type === 'result') showResult(message);
+			const data = JSON.parse(event.data);
+			// The backend's own link status; everything else is a BridgeMessage.
+			if ('link' in data) {
+				bridgeConnected = data.link.connected;
+				return;
+			}
+			const message = fromJson(BridgeMessageSchema, data, { ignoreUnknownFields: true }).message;
+			if (message.case === 'state') vehicle = message.value;
+			else if (message.case === 'result') showResult(message.value);
 		};
 	}
 
 	function showResult(result: Result) {
 		const name = sent[result.id] ?? `command ${result.id}`;
 		delete sent[result.id];
-		lastResult = result.ok ? `${name}: ok` : `${name}: ${result.error}`;
+		lastResult = result.ok ? `${name}: ok` : `${name}: ${result.error ?? 'failed'}`;
 	}
 
 	function send(name: string, args: number[] = []) {
@@ -69,13 +69,20 @@
 		const id = nextId++;
 		sent[id] = name;
 		lastResult = `${name}: sent`;
-		socket.send(JSON.stringify({ id, name, args }));
+		const message = create(BackendMessageSchema, {
+			message: { case: 'command', value: { id, name, args } }
+		});
+		socket.send(JSON.stringify(toJson(BackendMessageSchema, message)));
 	}
 
-	function format(value: unknown): string {
-		if (value === null || value === undefined) return '—';
-		if (Array.isArray(value)) return value.map(format).join(', ');
+	function format(value: number | boolean | string | undefined): string {
+		if (value === undefined || Number.isNaN(value)) return '—';
+		if (typeof value === 'number') return value.toFixed(2);
 		return String(value);
+	}
+
+	function formatVector(v: Vector3 | undefined): string {
+		return v ? [v.x, v.y, v.z].map(format).join(', ') : '—';
 	}
 
 	onMount(() => {
@@ -103,12 +110,12 @@
 armed          {format(vehicle.armed)}
 mode           {format(vehicle.mode)}
 landed         {format(vehicle.landed)}
-position (m)   {format(vehicle.position)}
-velocity (m/s) {format(vehicle.velocity)}
+position (m)   {formatVector(vehicle.position)}
+velocity (m/s) {formatVector(vehicle.velocity)}
 heading (rad)  {format(vehicle.heading)}
-core state     {format(vehicle.core_state)}
-lease holder   {format(vehicle.lease_holder) || 'none'}
-target (m)     {format(vehicle.target)}</pre>
+core state     {vehicle.coreState === undefined ? '—' : CoreStateKind[vehicle.coreState]}
+lease holder   {vehicle.leaseHolder === undefined ? '—' : vehicle.leaseHolder || 'none'}
+target (m)     {formatVector(vehicle.target)}</pre>
 	<PositionMap position={vehicle.position} heading={vehicle.heading} target={vehicle.target} />
 {:else}
 	<p>No state received.</p>

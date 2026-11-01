@@ -53,7 +53,7 @@ apt-get install -y --no-install-recommends \
     libvpx-dev libx264-dev libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
     libxml2-dev libxml2-utils libxvidcore-dev mesa-utils mesa-vulkan-drivers \
     lld lldb nano net-tools ninja-build openssh-client patchelf pipewire pkg-config \
-    protobuf-compiler \
+    protobuf-compiler python3-protobuf \
     python-is-python3 python3-colcon-clean python3-dev python3-empy \
     python3-matplotlib python3-numpy python3-pandas python3-pillow python3-pip \
     python3-scipy python3-seaborn python3-setuptools python3-vcstool python3-venv \
