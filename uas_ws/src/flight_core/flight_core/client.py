@@ -1,19 +1,33 @@
 """Python client for commanding the vehicle through the flight_core node."""
 
+from collections.abc import Callable, Sequence
+import contextlib
 import math
 import re
 import threading
 import time
+from types import TracebackType
+from typing import Any, Self
+
+from px4_msgs.msg import VehicleLandDetected, VehicleLocalPosition, VehicleStatus
+import rclpy
+from rclpy.client import Client
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
 
 from flight_core_interfaces.msg import CoreState
 from flight_core_interfaces.srv import (
-    AcquireControl, CoreCommand, CoreVehicleCommand, Goto, ReleaseControl,
-    ResetControl, Trajectory)
-from px4_msgs.msg import (
-    VehicleLandDetected, VehicleLocalPosition, VehicleStatus)
-import rclpy
-from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
-from rclpy.qos import qos_profile_sensor_data
+    AcquireControl,
+    CoreCommand,
+    CoreVehicleCommand,
+    Goto,
+    ReleaseControl,
+    ResetControl,
+    Trajectory,
+)
+
+# An (x, y, z) vector; None components are uncontrolled.
+type Vector = Sequence[float | None]
 
 
 class ControlError(RuntimeError):
@@ -33,17 +47,17 @@ class Drone:
             drone.land()
     """
 
-    def __init__(self, name='script', service_timeout=5.0):
+    def __init__(self, name: str = 'script', service_timeout: float = 5.0) -> None:
         """Create the client node and start spinning it in the background."""
         self.name = name
         self.service_timeout = service_timeout
-        self._lease_id = None
+        self._lease_id: int | None = None
         # Last core state set by this client; None until it sets one.
-        self._core_state = None
-        self._status = None
-        self._core_status = None
-        self._local_position = None
-        self._land_detected = None
+        self._core_state: int | None = None
+        self._status: VehicleStatus | None = None
+        self._core_status: CoreState | None = None
+        self._local_position: VehicleLocalPosition | None = None
+        self._land_detected: VehicleLandDetected | None = None
 
         self._owns_context = not rclpy.ok()
         if self._owns_context:
@@ -53,40 +67,41 @@ class Drone:
         self._log = self._node.get_logger()
 
         self._node.create_subscription(
-            VehicleStatus, '/fmu/out/vehicle_status_v1',
-            self._on_status, qos_profile_sensor_data)
+            VehicleStatus, '/fmu/out/vehicle_status_v1', self._on_status, qos_profile_sensor_data
+        )
         self._node.create_subscription(
-            VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1',
-            self._on_local_position, qos_profile_sensor_data)
+            VehicleLocalPosition,
+            '/fmu/out/vehicle_local_position_v1',
+            self._on_local_position,
+            qos_profile_sensor_data,
+        )
         self._node.create_subscription(
-            VehicleLandDetected, '/fmu/out/vehicle_land_detected',
-            self._on_land_detected, qos_profile_sensor_data)
+            VehicleLandDetected,
+            '/fmu/out/vehicle_land_detected',
+            self._on_land_detected,
+            qos_profile_sensor_data,
+        )
 
         self._node.create_subscription(
-            CoreState, '/flight_core/out/core_state',
-            self._on_core_state, 10)
+            CoreState, '/flight_core/out/core_state', self._on_core_state, 10
+        )
 
-        self._acquire = self._node.create_client(
-            AcquireControl, '/flight_core/in/acquire_control')
-        self._release = self._node.create_client(
-            ReleaseControl, '/flight_core/in/release_control')
-        self._reset = self._node.create_client(
-            ResetControl, '/flight_core/in/reset_control')
-        self._core_command = self._node.create_client(
-            CoreCommand, '/flight_core/in/core_command')
+        self._acquire = self._node.create_client(AcquireControl, '/flight_core/in/acquire_control')
+        self._release = self._node.create_client(ReleaseControl, '/flight_core/in/release_control')
+        self._reset = self._node.create_client(ResetControl, '/flight_core/in/reset_control')
+        self._core_command = self._node.create_client(CoreCommand, '/flight_core/in/core_command')
         self._vehicle_command = self._node.create_client(
-            CoreVehicleCommand, '/flight_core/in/vehicle_command')
+            CoreVehicleCommand, '/flight_core/in/vehicle_command'
+        )
         self._goto = self._node.create_client(Goto, '/flight_core/in/goto')
-        self._trajectory = self._node.create_client(
-            Trajectory, '/flight_core/in/trajectory')
+        self._trajectory = self._node.create_client(Trajectory, '/flight_core/in/trajectory')
 
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self._node)
-        self._spin_thread = threading.Thread(
-            target=self._spin, daemon=True)
+        self._spin_thread = threading.Thread(target=self._spin, daemon=True)
         self._spin_thread.start()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         """Acquire control."""
         try:
             self.acquire()
@@ -95,7 +110,12 @@ class Drone:
             raise
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         """Hold position if flying, release control, and stop the node."""
         try:
             if self._lease_id is not None:
@@ -107,7 +127,7 @@ class Drone:
         finally:
             self.close()
 
-    def close(self):
+    def close(self) -> None:
         """Stop the background node. Does not release control."""
         self._executor.shutdown()
         self._spin_thread.join()
@@ -117,18 +137,19 @@ class Drone:
 
     # Control lease
 
-    def acquire(self, timeout=10.0):
+    def acquire(self, timeout: float = 10.0) -> None:
         """Take the control lease once PX4 state is being received."""
         self.wait_until(
-            lambda: self._status is not None
-            and self._local_position is not None,
-            timeout, 'PX4 vehicle status and local position')
+            lambda: self._status is not None and self._local_position is not None,
+            timeout,
+            'PX4 vehicle status and local position',
+        )
         self._log.info(f'Requesting control as {self.name!r}')
         request = AcquireControl.Request(client_name=self.name)
         self._lease_id = self._call(self._acquire, request).lease_id
         self._log.info(f'Control acquired (lease {self._lease_id})')
 
-    def reacquire(self, timeout=10.0):
+    def reacquire(self, timeout: float = 10.0) -> None:
         """Take the control lease even if another client holds it.
 
         Resets the lease, which switches the core to HOLD, then acquires it.
@@ -138,7 +159,7 @@ class Drone:
         self._call(self._reset, ResetControl.Request())
         self.acquire(timeout)
 
-    def release(self):
+    def release(self) -> None:
         """Give up the control lease; the vehicle keeps its current target."""
         self._log.info('Releasing control')
         request = ReleaseControl.Request(lease_id=self._held_lease())
@@ -147,34 +168,34 @@ class Drone:
 
     # Core states
 
-    def hold(self):
+    def hold(self) -> None:
         """Hold the current position and heading."""
         self._set_state(CoreCommand.Request.HOLD)
 
     # Vehicle commands
 
-    def arm(self, timeout=5.0):
+    def arm(self, timeout: float = 5.0) -> None:
         """Arm and wait until PX4 reports armed."""
         self._log.info('Requesting arm')
         self._send_vehicle_command(CoreVehicleCommand.Request.ARM)
         self.wait_until(lambda: self.is_armed, timeout, 'arming')
         self._log.info('Armed')
 
-    def disarm(self, timeout=5.0):
+    def disarm(self, timeout: float = 5.0) -> None:
         """Disarm and wait until PX4 reports disarmed."""
         self._log.info('Requesting disarm')
         self._send_vehicle_command(CoreVehicleCommand.Request.DISARM)
         self.wait_until(lambda: not self.is_armed, timeout, 'disarming')
         self._log.info('Disarmed')
 
-    def offboard_mode(self, timeout=5.0):
+    def offboard_mode(self, timeout: float = 5.0) -> None:
         """Switch to offboard and wait until PX4 reports it."""
         self._log.info('Requesting offboard mode')
         self._send_vehicle_command(CoreVehicleCommand.Request.OFFBOARD)
         self.wait_until(lambda: self.is_offboard, timeout, 'offboard mode')
         self._log.info('In offboard mode')
 
-    def position_mode(self, timeout=5.0):
+    def position_mode(self, timeout: float = 5.0) -> None:
         """Switch to PX4 position mode and wait until PX4 reports it.
 
         flight_core returns to HOLD.
@@ -183,12 +204,13 @@ class Drone:
         self._send_vehicle_command(CoreVehicleCommand.Request.POSITION)
         self._core_state = CoreCommand.Request.HOLD
         self.wait_until(
-            lambda: self.status.nav_state
-            == VehicleStatus.NAVIGATION_STATE_POSCTL,
-            timeout, 'position mode')
+            lambda: self.status.nav_state == VehicleStatus.NAVIGATION_STATE_POSCTL,
+            timeout,
+            'position mode',
+        )
         self._log.info('In position mode')
 
-    def land(self, wait=True, timeout=60.0):
+    def land(self, wait: bool = True, timeout: float = 60.0) -> None:
         """Land with PX4's land mode; flight_core returns to HOLD.
 
         With `wait`, block until PX4 reports landed, then disarm (unless PX4
@@ -205,7 +227,7 @@ class Drone:
             self.disarm()
         self.position_mode()
 
-    def takeoff(self, altitude, timeout=30.0, tolerance=0.3):
+    def takeoff(self, altitude: float, timeout: float = 30.0, tolerance: float = 0.3) -> None:
         """Hold, enter offboard, arm if needed, and climb `altitude` metres.
 
         In real mode flight_core rejects arming, so the pilot must arm first.
@@ -218,8 +240,17 @@ class Drone:
         x, y, z = self.position
         self.goto(x, y, z - altitude, timeout=timeout, tolerance=tolerance)
 
-    def goto(self, x, y, z, heading=None, max_speed=None, wait=True,
-             tolerance=0.3, timeout=60.0):
+    def goto(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        heading: float | None = None,
+        max_speed: float | None = None,
+        wait: bool = True,
+        tolerance: float = 0.3,
+        timeout: float = 60.0,
+    ) -> None:
         """Fly to a NED position; by default keep the current heading.
 
         Switches the core to GOTO if needed. The target is saved even outside
@@ -234,30 +265,41 @@ class Drone:
         self._log.info(
             f'Requesting goto ({x:.2f}, {y:.2f}, {z:.2f}), '
             f'heading {heading:.2f} rad'
-            + ('' if max_speed is None else f', max speed {max_speed} m/s'))
+            + ('' if max_speed is None else f', max speed {max_speed} m/s')
+        )
         request = Goto.Request(
             lease_id=self._held_lease(),
             position=[float(x), float(y), float(z)],
             heading=float(heading),
-            max_horizontal_speed=math.nan if max_speed is None
-            else float(max_speed))
+            max_horizontal_speed=math.nan if max_speed is None else float(max_speed),
+        )
         self._call(self._goto, request)
         if wait:
             self.wait_until(
-                lambda: self.has_arrived(x, y, z, tolerance),
-                timeout, f'reaching ({x}, {y}, {z})')
+                lambda: self.has_arrived(x, y, z, tolerance), timeout, f'reaching ({x}, {y}, {z})'
+            )
             self._log.info(f'Arrived at ({x:.2f}, {y:.2f}, {z:.2f})')
 
-    def has_arrived(self, x, y, z, tolerance=0.2, max_speed=0.2):
+    def has_arrived(
+        self, x: float, y: float, z: float, tolerance: float = 0.2, max_speed: float = 0.2
+    ) -> bool:
         """Whether within `tolerance` m of (x, y, z) and nearly stopped.
 
         Nearly stopped means slower than `max_speed` m/s.
         """
-        return (math.dist(self.position, (x, y, z)) < tolerance
-                and math.hypot(*self.velocity) < max_speed)
+        return (
+            math.dist(self.position, (x, y, z)) < tolerance
+            and math.hypot(*self.velocity) < max_speed
+        )
 
-    def trajectory(self, position=None, velocity=None, acceleration=None,
-                   yaw=None, yawspeed=None):
+    def trajectory(
+        self,
+        position: Vector | None = None,
+        velocity: Vector | None = None,
+        acceleration: Vector | None = None,
+        yaw: float | None = None,
+        yawspeed: float | None = None,
+    ) -> None:
         """Set the PX4 TrajectorySetpoint fields; None leaves one uncontrolled.
 
         Switches the core to TRAJECTORY if needed (starting at the current
@@ -270,17 +312,21 @@ class Drone:
         # Debug only: trajectory setpoints are typically sent at a high rate.
         self._log.debug(
             f'Trajectory position={position} velocity={velocity} '
-            f'acceleration={acceleration} yaw={yaw} yawspeed={yawspeed}')
+            f'acceleration={acceleration} yaw={yaw} yawspeed={yawspeed}'
+        )
         request = Trajectory.Request(
             lease_id=self._held_lease(),
             position=_vector(position),
             velocity=_vector(velocity),
             acceleration=_vector(acceleration),
             yaw=math.nan if yaw is None else float(yaw),
-            yawspeed=math.nan if yawspeed is None else float(yawspeed))
+            yawspeed=math.nan if yawspeed is None else float(yawspeed),
+        )
         self._call(self._trajectory, request)
 
-    def wait_until(self, predicate, timeout, description='condition'):
+    def wait_until(
+        self, predicate: Callable[[], bool], timeout: float, description: str = 'condition'
+    ) -> None:
         """Poll `predicate` until true or raise ControlError after `timeout`."""
         deadline = time.monotonic() + timeout
         while not predicate():
@@ -291,86 +337,83 @@ class Drone:
     # Vehicle state from PX4
 
     @property
-    def core_state(self):
+    def core_state(self) -> CoreState:
         """Latest flight_core CoreState (state and lease holder)."""
         return self._require(self._core_status, 'flight_core state')
 
     @property
-    def status(self):
+    def status(self) -> VehicleStatus:
         """Latest raw px4_msgs VehicleStatus."""
         return self._require(self._status, 'PX4 vehicle status')
 
     @property
-    def is_armed(self):
+    def is_armed(self) -> bool:
         """Whether PX4 reports the vehicle armed."""
         return self.status.arming_state == VehicleStatus.ARMING_STATE_ARMED
 
     @property
-    def is_offboard(self):
+    def is_offboard(self) -> bool:
         """Whether PX4 is in offboard mode."""
-        return (self.status.nav_state
-                == VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+        return self.status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
 
     @property
-    def is_landed(self):
+    def is_landed(self) -> bool:
         """Whether PX4's land detector reports the vehicle landed."""
-        return self._require(
-            self._land_detected, 'PX4 land detection').landed
+        return self._require(self._land_detected, 'PX4 land detection').landed
 
     @property
-    def position(self):
+    def position(self) -> tuple[float, float, float]:
         """Local NED position (x, y, z) in metres."""
         p = self._require(self._local_position, 'PX4 local position')
         return (p.x, p.y, p.z)
 
     @property
-    def velocity(self):
+    def velocity(self) -> tuple[float, float, float]:
         """Local NED velocity (vx, vy, vz) in m/s."""
         p = self._require(self._local_position, 'PX4 local position')
         return (p.vx, p.vy, p.vz)
 
     @property
-    def heading(self):
+    def heading(self) -> float:
         """Heading in radians from North."""
         return self._require(self._local_position, 'PX4 local position').heading
 
     # Internals
 
-    def _spin(self):
-        try:
+    def _spin(self) -> None:
+        # Ctrl-C shuts down the ROS context.
+        with contextlib.suppress(ExternalShutdownException):
             self._executor.spin()
-        except ExternalShutdownException:
-            pass  # Ctrl-C shut down the ROS context.
 
-    def _on_core_state(self, msg):
+    def _on_core_state(self, msg: CoreState) -> None:
         self._core_status = msg
 
-    def _on_status(self, msg):
+    def _on_status(self, msg: VehicleStatus) -> None:
         self._status = msg
 
-    def _on_local_position(self, msg):
+    def _on_local_position(self, msg: VehicleLocalPosition) -> None:
         self._local_position = msg
 
-    def _on_land_detected(self, msg):
+    def _on_land_detected(self, msg: VehicleLandDetected) -> None:
         self._land_detected = msg
 
-    def _held_lease(self):
+    def _held_lease(self) -> int:
         if self._lease_id is None:
             raise ControlError('Control is not held')
         return self._lease_id
 
-    def _set_state(self, state):
+    def _set_state(self, state: int) -> None:
         self._log.info(f'Requesting core state {_STATE_NAMES[state]}')
         request = CoreCommand.Request(lease_id=self._held_lease(), state=state)
         self._call(self._core_command, request)
         self._core_state = state
 
-    def _send_vehicle_command(self, command):
-        request = CoreVehicleCommand.Request(
-            lease_id=self._held_lease(), command=command)
+    def _send_vehicle_command(self, command: int) -> None:
+        request = CoreVehicleCommand.Request(lease_id=self._held_lease(), command=command)
         self._call(self._vehicle_command, request)
 
-    def _call(self, client, request):
+    # rclpy's Client and Future are not generic, so responses are untyped.
+    def _call(self, client: Client, request: Any) -> Any:
         if not client.wait_for_service(timeout_sec=self.service_timeout):
             raise ControlError(f'Service {client.srv_name} is not available')
         done = threading.Event()
@@ -380,26 +423,28 @@ class Drone:
             client.remove_pending_request(future)
             raise ControlError(f'Service {client.srv_name} timed out')
         response = future.result()
+        if response is None:
+            raise ControlError(f'Service {client.srv_name} returned no response')
         if not response.success:
             self._log.error(f'{client.srv_name} rejected: {response.message}')
             raise ControlError(response.message)
         return response
 
     @staticmethod
-    def _require(value, description):
+    def _require[T](value: T | None, description: str) -> T:
         if value is None:
             raise ControlError(f'No {description} received')
         return value
 
 
-_STATE_NAMES = {
+_STATE_NAMES: dict[int, str] = {
     CoreCommand.Request.HOLD: 'HOLD',
     CoreCommand.Request.GOTO: 'GOTO',
     CoreCommand.Request.TRAJECTORY: 'TRAJECTORY',
 }
 
 
-def _vector(values):
+def _vector(values: Vector | None) -> list[float]:
     """Convert an optional (x, y, z) to floats, with None components as NaN."""
     if values is None:
         return [math.nan] * 3

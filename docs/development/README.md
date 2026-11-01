@@ -63,6 +63,38 @@ and `core` logs afresh.
 | `SITL_TIMEOUT` | `120` seconds to wait for readiness |
 | `XRCE_PORT` | `8888` |
 
+## Linting and formatting
+
+C++ in `uas_ws/src` uses clang-format and clang-tidy (`uas_ws/.clang-format`,
+`uas_ws/.clang-tidy`, ROS 2 style). Python uses ruff and pyright, configured
+per project in `uas_ws/ruff.toml` and `uas_ws/pyrightconfig.json`, and in
+`flight_visualizer/backend/pyproject.toml`. The tools are in the container.
+[`scripts/lint`](../../scripts/lint) runs them all:
+
+```bash
+colcon build --base-paths uas_ws/src --symlink-install  # clang-tidy needs compile_commands.json
+scripts/lint                # check only; non-zero exit on any finding
+scripts/lint --fix          # format and apply automatic fixes
+scripts/lint python         # or cpp, to run one language
+```
+
+clang-tidy reads each package's `compile_commands.json` from its colcon build
+directory (`/build/colcon/build/<package>`); ament CMake packages enable it
+with `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`. Add new C++ packages the same
+way, and add new Python projects to `PYTHON_PROJECTS` in `scripts/lint` with
+their own ruff and pyright configuration. Extensionless Python scripts need
+listing in `extend-include`. pyright resolves `uas_ws` imports through the ROS
+environment, which the script sources, including the `install/` overlay; the
+backend's resolve through its uv `.venv`, so run `uv sync` first.
+
+Editor tools such as clangd look for `compile_commands.json` beside the
+sources. Symlink it into the package once; the link is ignored by Git and
+stays valid across rebuilds:
+
+```bash
+ln -s /build/colcon/build/flight_core/compile_commands.json uas_ws/src/flight_core/
+```
+
 ## Flight visualizer
 
 The [frontend](../../flight_visualizer/frontend/flight_visualizer/README.md) is a SvelteKit app

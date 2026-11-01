@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Lint and format checks for the monorepo's C++ and Python projects.
+#
+# Usage: lint [--fix] [cpp|python...]
+#   --fix    Apply formatting and automatic fixes instead of only reporting.
+#   cpp      clang-format and clang-tidy on uas_ws/src C++ sources.
+#   python   ruff check, ruff format and pyright on the Python projects.
+# With no language, both run. Exits non-zero if any check fails.
+#
+# clang-tidy reads compile_commands.json from each package's colcon build
+# directory, so build the ROS workspace first. pyright resolves uas_ws imports
+# through the ROS environment, which this script sources, and the backend's
+# through its uv environment, so run `uv sync` there first.
+#
+# Environment:
+#   COLCON_BUILD_BASE  colcon build directory (default /build/colcon/build)
+
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+COLCON_BUILD_BASE=${COLCON_BUILD_BASE:-/build/colcon/build}
+# Each project carries its own ruff and pyright configuration.
+PYTHON_PROJECTS=(uas_ws flight_visualizer/backend)
+# Python projects whose imports come from the ROS environment.
+ROS_PROJECTS=(uas_ws)
+
+fix=false
+languages=()
+for arg in "$@"; do
+    case $arg in
+        --fix) fix=true ;;
+        cpp | python) languages+=("$arg") ;;
+        -h | --help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "lint: unknown argument '$arg'" >&2; exit 2 ;;
+    esac
+done
+[[ ${#languages[@]} -gt 0 ]] || languages=(cpp python)
+
+status=0
+run() {
+    echo "+ $*"
+    "$@" || status=1
+}
+
+# Run a command with ROS and the workspace overlay sourced.
+# shellcheck disable=SC2317  # Called through run.
+with_ros() {
+    (
+        # ROS-generated setup files aren't compatible with nounset.
+        set +u
+        # shellcheck source=/dev/null
+        source /opt/ros/jazzy/setup.bash
+        if [[ -f $ROOT/install/local_setup.bash ]]; then
+            # shellcheck source=/dev/null
+            source "$ROOT/install/local_setup.bash"
+        fi
+        set -u
+        "$@"
+    )
+}
+
+lint_cpp() {
+    local sources=()
+    mapfile -t sources < <(git -C "$ROOT" ls-files -- \
+        'uas_ws/src/*.cpp' 'uas_ws/src/*.hpp' 'uas_ws/src/*.h' 'uas_ws/src/*.cc')
+    [[ ${#sources[@]} -gt 0 ]] || return 0
+
+    if $fix; then
+        run clang-format -i "${sources[@]/#/$ROOT/}"
+    else
+        run clang-format --dry-run --Werror "${sources[@]/#/$ROOT/}"
+    fi
+
+    local databases=()
+    mapfile -t databases < <(grep -l "\"$ROOT/uas_ws/src/" \
+        "$COLCON_BUILD_BASE"/*/compile_commands.json 2>/dev/null)
+    if [[ ${#databases[@]} -eq 0 ]]; then
+        echo "lint: no compile_commands.json for uas_ws/src under $COLCON_BUILD_BASE;" \
+            "run colcon build first" >&2
+        status=1
+        return
+    fi
+    local database tidy_args=(-quiet)
+    $fix && tidy_args+=(-fix -format)
+    for database in "${databases[@]}"; do
+        run run-clang-tidy "${tidy_args[@]}" -p "$(dirname "$database")" \
+            "$ROOT/uas_ws/src/.*"
+    done
+}
+
+lint_python() {
+    local project
+    for project in "${PYTHON_PROJECTS[@]}"; do
+        if $fix; then
+            run ruff check --fix "$ROOT/$project"
+            run ruff format "$ROOT/$project"
+        else
+            run ruff check "$ROOT/$project"
+            run ruff format --check "$ROOT/$project"
+        fi
+        local environment=()
+        [[ " ${ROS_PROJECTS[*]} " == *" $project "* ]] && environment=(with_ros)
+        run "${environment[@]}" pyright --project "$ROOT/$project"
+    done
+}
+
+for language in "${languages[@]}"; do
+    case $language in
+        cpp) lint_cpp ;;
+        python) lint_python ;;
+    esac
+done
+exit $status

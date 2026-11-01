@@ -11,3 +11,23 @@ dependencies = [
 [tool.uv]
 # Use the container's Python rather than downloading one.
 python-preference = "only-system"
+
+[tool.ruff]
+line-length = 99
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ANN"]
+# Any is allowed for JSON values.
+ignore = ["ANN401"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+
+[tool.pyright]
+# The uv environment; run `uv sync` first.
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"

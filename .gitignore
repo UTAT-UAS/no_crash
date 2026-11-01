@@ -11,3 +11,4 @@ node_modules/
 *.px4
 *.bin
 *.log
+compile_commands.json

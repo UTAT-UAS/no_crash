@@ -110,6 +110,7 @@ colcon build --base-paths uas_ws/src --packages-up-to flight_core --symlink-inst
 colcon test --base-paths uas_ws/src --packages-select flight_core
 colcon test-result --verbose --test-result-base /build/colcon/build/flight_core
 python3 -m py_compile uas_ws/src/flight_core/flight_core/client.py
+scripts/lint
 scripts/sitl run -- ros2 run flight_core example_mission
 ```
 
