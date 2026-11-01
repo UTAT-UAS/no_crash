@@ -24,4 +24,4 @@ and C/C++ compilers. Build output and logs default to `/build/colcon`; the
 install overlay stays at `~/workspace/install`.
 
 To test in simulation, use the repository's
-[`scripts/sitl`](../docs/development/README.md#sitl-testing) helper.
+[`scripts/sim`](../docs/development/README.md#simulation) helper.

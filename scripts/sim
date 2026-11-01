@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+# Run the PX4 SITL simulator and the flight visualizer in the background.
+#
+# Usage: sim <group> <command> [options]
+#
+#   sim sitl start [--no-gui] [--no-core] [--real]
+#       Start the XRCE agent, Gazebo, PX4 SITL, the Gazebo GUI and flight_core
+#       (mode:=sim, or mode:=real with --real, which rejects arming); wait
+#       until ready.
+#   sim sitl restart
+#       Restart PX4 with fresh parameters and respawn the drone at the origin,
+#       keeping Gazebo, the GUI and the agent. flight_core restarts, in the
+#       same mode, if running.
+#   sim sitl run [start options] -- <command...>
+#       Start, run the command, stop; exits with the command's status.
+#   sim sitl px4 <module> [args...]
+#       PX4 shell command, e.g. `sim sitl px4 param show NAV_DLL_ACT`.
+#
+#   sim viz start [--no-bridge] [--no-backend] [--no-frontend]
+#       Start flight_visualizer_bridge, the backend (port 8000) and the
+#       frontend dev server (http://localhost:5173); wait until ready.
+#   sim viz restart
+#       Restart the running visualizer components.
+#
+#   sim <group> stop      Stop everything the group started.
+#   sim <group> status    Show running components and log paths.
+#
+# Environment:
+#   PX4_DIR          PX4-Autopilot checkout (default ~/build/PX4-Autopilot)
+#   PX4_SIM_MODEL    Simulated vehicle (default gz_x500)
+#   PX4_GZ_WORLD     Gazebo world in PX4's worlds directory (default default)
+#   SIM_STATE_DIR    PIDs, logs and PX4 working directory, in a subdirectory
+#                    per group (default ${TMPDIR:-/tmp}/no_crash_sim)
+#   SIM_TIMEOUT      Seconds to wait for readiness (default 120)
+#   XRCE_PORT        MicroXRCEAgent UDP port (default 8888)
+#
+# Every PX4 start uses a fresh working directory, so parameters begin at their
+# defaults. NAV_DLL_ACT is set to 0 so PX4 arms without a GCS and COM_RC_LOSS_T
+# to 5 s; the PX4 build directory's parameters are not touched.
+
+# stop_on_exit is read by the EXIT trap.
+# shellcheck disable=SC2034
+set -eo pipefail
+
+PX4_DIR=${PX4_DIR:-$HOME/build/PX4-Autopilot}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:-gz_x500}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:-default}
+SIM_STATE_DIR=${SIM_STATE_DIR:-${TMPDIR:-/tmp}/no_crash_sim}
+SIM_TIMEOUT=${SIM_TIMEOUT:-120}
+XRCE_PORT=${XRCE_PORT:-8888}
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SITL_BUILD=$PX4_DIR/build/px4_sitl_default
+BACKEND_DIR=$REPO_ROOT/flight_visualizer/backend
+FRONTEND_DIR=$REPO_ROOT/flight_visualizer/frontend/flight_visualizer
+# Gazebo model directory; spawned as <model>_<n>, see spawn_model.
+MODEL=${PX4_SIM_MODEL#gz_}
+# Components per group, in stop order.
+SITL_COMPONENTS=(core px4 gui gz agent)
+VIZ_COMPONENTS=(frontend backend bridge)
+
+# Set by dispatch: the group's state directory, logs and components.
+STATE='' LOGS='' COMPONENTS=()
+# Set while starting so a failure stops what was started.
+stop_on_exit=0
+trap '(( stop_on_exit )) && cmd_stop' EXIT
+
+die() {
+    echo "sim: $*" >&2
+    exit 1
+}
+
+source_ros() {
+    if [[ -f $HOME/.local/share/no-crash/environment.sh ]]; then
+        source "$HOME/.local/share/no-crash/environment.sh"
+    fi
+    source /opt/ros/jazzy/setup.bash
+    if [[ -f $REPO_ROOT/install/local_setup.bash ]]; then
+        source "$REPO_ROOT/install/local_setup.bash"
+    fi
+}
+
+require_ros_package() {
+    ros2 pkg prefix "$1" > /dev/null 2>&1 \
+        || die "$1 is not built; run colcon build from $REPO_ROOT"
+}
+
+# --- Processes ---------------------------------------------------------------
+
+pid_of() {
+    [[ -f $STATE/$1.pid ]] && cat "$STATE/$1.pid"
+}
+
+is_running() {
+    local pid
+    pid=$(pid_of "$1") && kill -0 "$pid" 2>/dev/null
+}
+
+# Start a command in its own process group so stop can kill all its children.
+spawn() {
+    local name=$1
+    shift
+    setsid "$@" > "$LOGS/$name.log" 2>&1 < /dev/null &
+    echo $! > "$STATE/$name.pid"
+    disown
+}
+
+# Poll a command until it succeeds; fail if `name` exits or on timeout.
+wait_until() {
+    local name=$1 description=$2 deadline=$((SECONDS + SIM_TIMEOUT))
+    shift 2
+    until "$@" > /dev/null 2>&1; do
+        if ! is_running "$name" || (( SECONDS >= deadline )); then
+            tail -n 40 "$LOGS/$name.log" >&2 || true
+            is_running "$name" || die "$name exited while waiting for $description"
+            die "timed out after ${SIM_TIMEOUT}s waiting for $description"
+        fi
+        sleep 0.5
+    done
+}
+
+wait_for_log() {
+    wait_until "$1" "$3" grep -q "$2" "$LOGS/$1.log"
+}
+
+# Stop the named components; fails if none was running.
+stop_components() {
+    local name pid status=1
+    for name in "$@"; do
+        pid=$(pid_of "$name") || continue
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -INT -- "-$pid" 2>/dev/null || true
+            for _ in {1..20}; do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+            done
+            kill -KILL -- "-$pid" 2>/dev/null || true
+            echo "Stopped $name"
+            status=0
+        fi
+        rm -f "$STATE/$name.pid"
+    done
+    return "$status"
+}
+
+require_stopped() {
+    local name
+    for name in "${COMPONENTS[@]}"; do
+        is_running "$name" && die "$name is already running; run 'sim $group stop' first"
+    done
+    return 0
+}
+
+# Parse --no-<component> flags into `enabled`, an associative array.
+# `extra_options` names further accepted flags, which set `options[<flag>]`.
+parse_start_options() {
+    local name
+    for name in "$@"; do
+        if [[ $name == --no-* && -v enabled[${name#--no-}] ]]; then
+            enabled[${name#--no-}]=0
+        elif [[ " ${extra_options:-} " == *" $name "* ]]; then
+            options[$name]=1
+        else
+            die "unknown $group start option '$name'"
+        fi
+    done
+}
+
+cmd_stop() {
+    stop_components "${COMPONENTS[@]}" || echo "Nothing running"
+}
+
+cmd_status() {
+    local name
+    for name in "${COMPONENTS[@]}"; do
+        if is_running "$name"; then
+            printf '%-9s running (pid %s)  %s\n' "$name" "$(pid_of "$name")" "$LOGS/$name.log"
+        else
+            printf '%-9s stopped\n' "$name"
+        fi
+    done
+}
+
+# --- SITL --------------------------------------------------------------------
+
+sitl_start() {
+    local -A enabled=([gui]=1 [core]=1) options=()
+    local extra_options=--real
+    parse_start_options "$@"
+
+    [[ -x $SITL_BUILD/bin/px4 ]] || die "no SITL build at $SITL_BUILD (set PX4_DIR or run 'make px4_sitl')"
+    require_stopped
+    sitl_env
+    command -v MicroXRCEAgent > /dev/null || die "MicroXRCEAgent not found on PATH"
+    (( enabled[core] )) && require_ros_package flight_core
+
+    stop_on_exit=1
+    rm -rf "$STATE"
+    mkdir -p "$LOGS"
+    if (( ${options[--real]:-0} )); then echo real; else echo sim; fi > "$STATE/core_mode"
+
+    echo "Starting MicroXRCEAgent on UDP $XRCE_PORT"
+    spawn agent MicroXRCEAgent udp4 -p "$XRCE_PORT"
+    echo "Starting Gazebo (world $PX4_GZ_WORLD)"
+    spawn gz gz sim --verbose=1 -r -s "$PX4_GZ_WORLDS/$PX4_GZ_WORLD.sdf"
+    wait_until gz "the Gazebo world" world_ready
+    (( enabled[gui] )) && spawn gui gz sim -g
+    spawn_model "${MODEL}_0"
+    start_px4
+    (( enabled[core] )) && start_core
+    stop_on_exit=0
+    echo "SITL ready. Logs: $LOGS"
+}
+
+sitl_restart() {
+    is_running gz || die "Gazebo is not running; use 'sim sitl start'"
+    local restart_core=0 old_model
+    is_running core && restart_core=1
+    sitl_env
+    (( restart_core )) && require_ros_package flight_core
+
+    stop_components core px4 || true
+    old_model=$(cat "$STATE/model")
+    echo "Removing $old_model from the world"
+    gz_service remove gz.msgs.Entity "name: \"$old_model\", type: MODEL" || true
+
+    stop_on_exit=1
+    # A removed model's sensors keep publishing on topics named after it, so
+    # the new model needs a new name or PX4 would read both, e.g. two
+    # conflicting magnetometers.
+    spawn_model "${MODEL}_$(( ${old_model##*_} + 1 ))"
+    start_px4
+    (( restart_core )) && start_core
+    stop_on_exit=0
+    echo "SITL restarted. Logs: $LOGS"
+}
+
+sitl_run() {
+    local start_args=() status=0
+    while (( $# )) && [[ $1 != -- ]]; do
+        start_args+=("$1")
+        shift
+    done
+    [[ $1 == -- ]] && shift
+    (( $# )) || die "usage: sim sitl run [start options] -- <command...>"
+
+    sitl_start "${start_args[@]}"
+    stop_on_exit=1
+    "$@" || status=$?
+    echo "Command exited with status $status. Logs: $LOGS"
+    return "$status"
+}
+
+sitl_px4() {
+    (( $# )) || die "usage: sim sitl px4 <module> [args...]"
+    local module=$1
+    shift
+    [[ -x $SITL_BUILD/bin/px4-$module ]] || die "no PX4 module '$module' in $SITL_BUILD/bin"
+    is_running px4 || die "PX4 SITL is not running"
+    "$SITL_BUILD/bin/px4-$module" "$@"
+}
+
+sitl_env() {
+    # Sets GZ_SIM_* paths and PX4_GZ_MODELS/WORLDS for PX4's Gazebo resources.
+    if [[ -f $SITL_BUILD/rootfs/gz_env.sh ]]; then
+        source "$SITL_BUILD/rootfs/gz_env.sh"
+    fi
+    source_ros
+}
+
+# gz_service <service> <request type> <request>, on the simulated world.
+gz_service() {
+    gz service -s "/world/$PX4_GZ_WORLD/$1" --reqtype "$2" --reptype gz.msgs.Boolean \
+        --timeout 5000 --req "$3" > /dev/null
+}
+
+world_ready() {
+    gz service -i --service "/world/$PX4_GZ_WORLD/scene/info" 2>&1 | grep -q "Service providers"
+}
+
+model_exists() {
+    gz model --list 2>/dev/null | grep -qx "[[:space:]]*- $1"
+}
+
+# Spawn the vehicle at the origin as `name`; PX4 attaches to the model
+# recorded in $STATE/model.
+spawn_model() {
+    echo "Spawning $1"
+    gz_service create gz.msgs.EntityFactory \
+        "name: \"$1\", allow_renaming: false, sdf: '<sdf version=\"1.6\"><include><uri>file://$PX4_GZ_MODELS/$MODEL/model.sdf</uri></include></sdf>'"
+    wait_until gz "$1 to spawn" model_exists "$1"
+    echo "$1" > "$STATE/model"
+}
+
+# Start PX4 in a fresh working directory, attached to the spawned model.
+start_px4() {
+    local rootfs=$STATE/rootfs
+    rm -rf "$rootfs"
+    mkdir -p "$rootfs"
+    # PX4's gz startup sources gz_env.sh from its working directory.
+    cp "$SITL_BUILD/rootfs/gz_env.sh" "$rootfs/"
+
+    echo "Starting PX4 SITL ($PX4_SIM_MODEL) from $PX4_DIR"
+    spawn px4 env PX4_GZ_STANDALONE=1 PX4_GZ_WORLD="$PX4_GZ_WORLD" \
+        PX4_SIM_MODEL="$PX4_SIM_MODEL" PX4_GZ_MODEL_NAME="$(cat "$STATE/model")" \
+        GZ_IP=127.0.0.1 "$SITL_BUILD/bin/px4" -d -w "$rootfs" "$SITL_BUILD/etc"
+    wait_for_log px4 "data writer" "PX4 to connect to the XRCE agent"
+    # Set at runtime: a PX4_PARAM_ override equal to the built-in default is
+    # replaced by the airframe's set-default.
+    "$SITL_BUILD/bin/px4-param" set NAV_DLL_ACT 0 > /dev/null # arm without a GCS
+    "$SITL_BUILD/bin/px4-param" set COM_RC_LOSS_T 5 > /dev/null
+    wait_for_log px4 "Ready for takeoff" "PX4 to be ready for takeoff"
+}
+
+start_core() {
+    local mode
+    mode=$(cat "$STATE/core_mode")
+    echo "Starting flight_core (mode:=$mode)"
+    spawn core ros2 launch flight_core flight_core.launch.py mode:="$mode"
+    wait_for_log core "Flight core ready" "flight_core to start"
+}
+
+# --- Visualizer --------------------------------------------------------------
+
+viz_start() {
+    local -A enabled=([bridge]=1 [backend]=1 [frontend]=1) options=()
+    parse_start_options "$@"
+    require_stopped
+
+    if (( enabled[bridge] )); then
+        source_ros
+        require_ros_package flight_visualizer_bridge
+    fi
+    if (( enabled[backend] )); then
+        [[ -d $BACKEND_DIR/.venv && -f $BACKEND_DIR/flight_visualizer_pb2.py ]] \
+            || die "backend is not set up; run 'uv sync && ./generate.sh' in $BACKEND_DIR"
+    fi
+    if (( enabled[frontend] )); then
+        [[ -d $FRONTEND_DIR/node_modules ]] \
+            || die "frontend is not set up; run 'bun install --frozen-lockfile' in $FRONTEND_DIR"
+    fi
+
+    stop_on_exit=1
+    rm -rf "$STATE"
+    mkdir -p "$LOGS"
+
+    if (( enabled[bridge] )); then
+        echo "Starting flight_visualizer_bridge"
+        spawn bridge ros2 run flight_visualizer_bridge flight_visualizer_bridge
+        wait_for_log bridge "Listening on" "the bridge to listen"
+    fi
+    if (( enabled[backend] )); then
+        echo "Starting backend on port 8000"
+        (cd "$BACKEND_DIR" && spawn backend uv run uvicorn app:app --host 0.0.0.0 --port 8000)
+        wait_for_log backend "Application startup complete" "the backend to start"
+    fi
+    if (( enabled[frontend] )); then
+        echo "Starting frontend dev server"
+        (cd "$FRONTEND_DIR" && spawn frontend bun run dev)
+        wait_for_log frontend "ready in" "the frontend dev server"
+        echo "Dashboard: http://localhost:5173"
+    fi
+    stop_on_exit=0
+    echo "Visualizer ready. Logs: $LOGS"
+}
+
+viz_restart() {
+    local name flags=()
+    for name in "${VIZ_COMPONENTS[@]}"; do
+        is_running "$name" || flags+=("--no-$name")
+    done
+    (( ${#flags[@]} < ${#VIZ_COMPONENTS[@]} )) || die "nothing is running; use 'sim viz start'"
+    cmd_stop
+    viz_start "${flags[@]}"
+}
+
+# --- Dispatch ----------------------------------------------------------------
+
+usage() {
+    sed -n '2,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+}
+
+group=${1:-}
+case $group in
+    sitl) COMPONENTS=("${SITL_COMPONENTS[@]}") ;;
+    viz) COMPONENTS=("${VIZ_COMPONENTS[@]}") ;;
+    -h | --help | help | '') usage; exit 0 ;;
+    *) die "unknown group '$group'; see 'sim --help'" ;;
+esac
+STATE=$SIM_STATE_DIR/$group
+LOGS=$STATE/logs
+command=${2:-}
+shift $(( $# < 2 ? $# : 2 ))
+
+case $group:$command in
+    *:stop) cmd_stop ;;
+    *:status) cmd_status ;;
+    sitl:start | sitl:restart | sitl:run | sitl:px4 | viz:start | viz:restart)
+        "${group}_$command" "$@" ;;
+    *) die "unknown $group command '$command'; see 'sim --help'" ;;
+esac

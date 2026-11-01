@@ -73,37 +73,30 @@ step needs its own terminal; source the overlay in every new ROS terminal with
    source install/local_setup.bash
    ```
 
-2. Start the simulator: MicroXRCEAgent, Gazebo, PX4 SITL and `flight_core`
-   in sim mode.
+2. Install the visualizer's dependencies (once, and after they change):
 
    ```bash
-   scripts/sitl start --gui
-   scripts/sitl status    # Components and log paths
+   (cd flight_visualizer/backend && uv sync && ./generate.sh)
+   (cd flight_visualizer/frontend/flight_visualizer && bun install --frozen-lockfile)
    ```
 
-3. Start the bridge that exposes `flight_core` to the visualizer (TCP port 8765):
+3. Start the simulator: MicroXRCEAgent, Gazebo with its GUI, PX4 SITL and
+   `flight_core` in sim mode.
 
    ```bash
-   ros2 run flight_visualizer_bridge flight_visualizer_bridge
+   scripts/sim sitl start      # --no-gui for headless
+   scripts/sim sitl status     # Components and log paths
    ```
 
-4. Start the visualizer backend (port 8000); it connects to the bridge on
-   `127.0.0.1:8765` by default:
+4. Start the visualizer: the bridge that exposes `flight_core` (TCP port
+   8765), the backend (port 8000) and the dashboard dev server. Open
+   <http://localhost:5173>.
 
    ```bash
-   cd flight_visualizer/backend
-   uv run uvicorn app:app --host 0.0.0.0 --port 8000
+   scripts/sim viz start
    ```
 
-5. Start the dashboard and open <http://localhost:5173>:
-
-   ```bash
-   cd flight_visualizer/frontend/flight_visualizer
-   bun install --frozen-lockfile
-   bun run dev
-   ```
-
-6. Fly. Acquire control and send commands from the dashboard, or run a
+5. Fly. Acquire control and send commands from the dashboard, or run a
    mission script against the core:
 
    ```bash
@@ -113,13 +106,12 @@ step needs its own terminal; source the overlay in every new ROS terminal with
    Only one client holds control at a time, so a mission script and the
    dashboard cannot both command the drone.
 
-7. Stop the simulator with `scripts/sitl stop`, and the other components with
-   Ctrl-C.
+6. Stop everything with `scripts/sim viz stop` and `scripts/sim sitl stop`.
 
-`scripts/sitl restart` resets PX4 and respawns the drone without restarting
-Gazebo. For a one-shot test, `scripts/sitl run -- ros2 run flight_core example_mission`
+`scripts/sim sitl restart` resets PX4 and respawns the drone without restarting
+Gazebo. For a one-shot test, `scripts/sim sitl run -- ros2 run flight_core example_mission`
 starts the simulator, runs the command and stops everything. See
-[SITL testing](docs/development/README.md#sitl-testing) for options and logs.
+[Simulation](docs/development/README.md#simulation) for options and logs.
 
 On the drone, run MicroXRCEAgent for the flight controller's link,
 `ros2 launch flight_core flight_core.launch.py` (real mode, which never arms

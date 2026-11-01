@@ -21,25 +21,32 @@ source install/local_setup.bash
 
 Keep the overlay at the root `install/`. The
 [ROS workspace README](../../uas_ws/README.md) describes that project's layout.
-Use [`scripts/sitl`](#sitl-testing) for simulation tests, for example
-`scripts/sitl run -- ros2 run flight_core example_mission`.
+Use [`scripts/sim`](#simulation) for simulation tests, for example
+`scripts/sim sitl run -- ros2 run flight_core example_mission`.
 `px4_msgs` is a Git submodule pinned to the PX4 release in use (v1.17.0); run
 `git submodule update --init` after cloning and declare it as a dependency of
 consumers.
 
-## SITL testing
+## Simulation
 
-[`scripts/sitl`](../../scripts/sitl) runs reproducible simulation sessions
-against the PX4 SITL build. Build the ROS workspace first; run it from anywhere.
+[`scripts/sim`](../../scripts/sim) runs reproducible simulation sessions
+against the PX4 SITL build, and the flight visualizer, as background
+processes. Build the ROS workspace first; run it from anywhere.
 
 | Command | Effect |
 |---|---|
-| `sitl start [--no-core] [--gui]` | Start MicroXRCEAgent, Gazebo, PX4 SITL and `flight_core` (`mode:=sim`); wait until ready |
-| `sitl restart` | Restart PX4 with fresh parameters and respawn the drone at the origin; Gazebo and the agent keep running, and `flight_core` is restarted if it was running |
-| `sitl stop` | Stop everything `start` launched |
-| `sitl status` | Show running components and log paths |
-| `sitl run [start options] -- <command>` | Start, run the command, stop; exit with the command's status |
-| `sitl px4 <module> [args]` | PX4 shell command, e.g. `sitl px4 param show NAV_DLL_ACT` or `sitl px4 commander takeoff` |
+| `sim sitl start [--no-gui] [--no-core] [--real]` | Start MicroXRCEAgent, Gazebo, its GUI, PX4 SITL and `flight_core` (`mode:=sim`, or `mode:=real` with `--real`, which rejects arming); wait until ready |
+| `sim sitl restart` | Restart PX4 with fresh parameters and respawn the drone at the origin; Gazebo, the GUI and the agent keep running, and `flight_core` is restarted in the same mode if it was running |
+| `sim sitl run [start options] -- <command>` | Start, run the command, stop; exit with the command's status |
+| `sim sitl px4 <module> [args]` | PX4 shell command, e.g. `sim sitl px4 param show NAV_DLL_ACT` or `sim sitl px4 commander takeoff` |
+| `sim viz start [--no-bridge] [--no-backend] [--no-frontend]` | Start `flight_visualizer_bridge`, the backend (port 8000) and the frontend dev server (port 5173); wait until ready |
+| `sim viz restart` | Restart the running visualizer components |
+| `sim <sitl\|viz> stop` | Stop everything the group started |
+| `sim <sitl\|viz> status` | Show running components and log paths |
+
+`viz start` expects the backend's `uv sync && ./generate.sh` and the
+frontend's `bun install --frozen-lockfile` to have been run; it does not
+install dependencies.
 
 Gazebo runs as its own process. The script spawns the drone at the origin
 and PX4 starts in standalone mode, attached to it. `restart` removes the
@@ -47,20 +54,20 @@ drone and spawns a new one under a new name (`x500_0`, `x500_1`, …): Gazebo
 keeps a removed model's sensors publishing, so reusing the name would give
 PX4 two conflicting sets of sensor data.
 
-Each PX4 start uses a fresh PX4 working directory under `SITL_STATE_DIR`, so
+Each PX4 start uses a fresh PX4 working directory under `SIM_STATE_DIR`, so
 parameters begin at their defaults and the PX4 build's own parameter file is
 never modified. For the session, `NAV_DLL_ACT` is set to 0 so PX4 arms without
-a ground station, and `COM_RC_LOSS_T` is set to 5 s. Logs for `agent`, `gz`, `gui`, `px4` and `core` are in
-`$SITL_STATE_DIR/logs` and are kept after `stop`; `restart` starts the `px4`
-and `core` logs afresh.
+a ground station, and `COM_RC_LOSS_T` is set to 5 s. Logs for each component
+are in `$SIM_STATE_DIR/<sitl|viz>/logs` and are kept after `stop` until the
+next `start`; `sitl restart` starts the `px4` and `core` logs afresh.
 
 | Variable | Default |
 |---|---|
 | `PX4_DIR` | `~/build/PX4-Autopilot` |
 | `PX4_SIM_MODEL` | `gz_x500` |
 | `PX4_GZ_WORLD` | `default` (a world in PX4's `Tools/simulation/gz/worlds`) |
-| `SITL_STATE_DIR` | `${TMPDIR:-/tmp}/flight_core_sitl` |
-| `SITL_TIMEOUT` | `120` seconds to wait for readiness |
+| `SIM_STATE_DIR` | `${TMPDIR:-/tmp}/no_crash_sim` |
+| `SIM_TIMEOUT` | `120` seconds to wait for readiness |
 | `XRCE_PORT` | `8888` |
 
 ## Linting and formatting
