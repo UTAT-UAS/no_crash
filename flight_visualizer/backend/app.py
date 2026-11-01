@@ -7,9 +7,11 @@ unreachable, browsers get `{"type": "link", "connected": false}`.
 """
 
 import asyncio
+from collections.abc import AsyncIterator
 import contextlib
 import json
 import os
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -19,11 +21,11 @@ RECONNECT_DELAY = 1.0
 
 browsers: set[WebSocket] = set()
 bridge_writer: asyncio.StreamWriter | None = None
-latest_state: dict | None = None
-link = {'type': 'link', 'connected': False}
+latest_state: dict[str, Any] | None = None
+link: dict[str, Any] = {'type': 'link', 'connected': False}
 
 
-async def broadcast(message: dict) -> None:
+async def broadcast(message: dict[str, Any]) -> None:
     for browser in list(browsers):
         try:
             await browser.send_json(message)
@@ -59,7 +61,7 @@ async def bridge_link() -> None:
 
 
 @contextlib.asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     task = asyncio.create_task(bridge_link())
     yield
     task.cancel()
@@ -69,7 +71,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.get('/api/state')
-async def get_state() -> dict:
+async def get_state() -> dict[str, Any]:
     """Link status and the latest state, for debugging."""
     return {'connected': link['connected'], 'state': latest_state}
 
@@ -85,9 +87,14 @@ async def websocket(browser: WebSocket) -> None:
         while True:
             command = await browser.receive_json()
             if bridge_writer is None:
-                await browser.send_json({
-                    'type': 'result', 'id': command.get('id'), 'ok': False,
-                    'error': 'Bridge is not connected'})
+                await browser.send_json(
+                    {
+                        'type': 'result',
+                        'id': command.get('id'),
+                        'ok': False,
+                        'error': 'Bridge is not connected',
+                    }
+                )
                 continue
             command['type'] = 'command'
             bridge_writer.write(json.dumps(command, separators=(',', ':')).encode() + b'\n')

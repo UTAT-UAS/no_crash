@@ -146,16 +146,16 @@ freeze subsequent apt updates. Installed inventories are retained under
 
 ### Extras layer
 
-Shared developer tools that no image build step depends on, such as `ruff`,
-are installed by `.devcontainer/image/install-extras.sh` as the last layer of
-every profile. (`clang-format` and `clang-tidy` come from the earlier system
-layer.)
+Shared developer tools that no image build step depends on, such as `ruff`
+and `pyright`, are installed by `.devcontainer/image/install-extras.sh` as the
+last layer of every profile. (`clang-format` and `clang-tidy` come from the
+earlier system layer.)
 Their release pins and hashes live in `.devcontainer/extras.env` rather than
 `versions.env`. Adding a package there, or bumping a pin, rebuilds only that
 final step, leaving the system, native, and vision layers cached. The script
 copies `extras.env` to `~/.local/share/no-crash`.
-Project tool configuration (`.clang-format`, `.clang-tidy`, `ruff.toml`) belongs
-in each project.
+Project tool configuration (`.clang-format`, `.clang-tidy`, `ruff.toml`,
+`pyrightconfig.json`) belongs in each project.
 
 Common profile settings belong in `.devcontainer/scripts/generate-configs.py`;
 regenerate and commit its outputs after changes. To update host tools, run

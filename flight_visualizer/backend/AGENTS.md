@@ -33,6 +33,7 @@ User-facing usage is in [README.md](README.md). Keep it lean; put detail here.
 
 ```bash
 python3 -m py_compile app.py
+../../scripts/lint python
 uv run uvicorn app:app --port 8010 &   # a spare port if 8000 is in use
 curl -s localhost:8010/api/state
 ```

@@ -29,6 +29,8 @@ remains at `install/`. Avoid introducing nested repository imports.
   lifecycle hooks do not discover application manifests.
 - Keep generated output, local environments, and personal configuration out
   of source control.
+- Run `scripts/lint` (clang-format, clang-tidy, ruff, pyright) on C++ and Python
+  changes; see `docs/development/README.md#linting-and-formatting`.
 - Run checks relevant to the changed project. Distinguish syntax checks,
   compilation, runtime tests, and hardware tests when reporting results.
 

@@ -9,30 +9,33 @@ directions carry newline-delimited compact JSON:
 - backend -> bridge: `{"type": "command", "id": ..., "name": ..., "args": [...]}`.
 """
 
+from collections.abc import Callable, Iterable
 import json
 import math
 import socket
 import threading
 import time
+from typing import Any, SupportsFloat
+
+from px4_msgs.msg import VehicleStatus
 
 from flight_core.client import Drone
 from flight_core_interfaces.msg import CoreState
-from px4_msgs.msg import VehicleStatus
 
 # PX4 navigation state values to names, e.g. 14 -> 'OFFBOARD'.
-NAV_STATES = {
+NAV_STATES: dict[int, str] = {
     getattr(VehicleStatus, name): name.removeprefix('NAVIGATION_STATE_')
     for name in dir(type(VehicleStatus))
     if name.startswith('NAVIGATION_STATE_') and name != 'NAVIGATION_STATE_MAX'
 }
-CORE_STATES = {
+CORE_STATES: dict[int, str] = {
     CoreState.HOLD: 'HOLD',
     CoreState.GOTO: 'GOTO',
     CoreState.TRAJECTORY: 'TRAJECTORY',
 }
 # Commands the visualizer may send. None of them wait for long, so a slow
 # command cannot hold up a following one such as land.
-COMMANDS = {
+COMMANDS: dict[str, Callable[..., None]] = {
     'acquire': Drone.acquire,
     'reacquire': Drone.reacquire,
     'release': Drone.release,
@@ -51,28 +54,31 @@ SEND_TIMEOUT = 5.0
 class BridgeDrone(Drone):
     """Drone client that streams state to, and takes commands from, a socket."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('flight_visualizer_bridge')
-        self.host = self._node.declare_parameter('host', '0.0.0.0').value
-        self.port = self._node.declare_parameter('port', 8765).value
-        self.rate_hz = self._node.declare_parameter('rate_hz', 5.0).value
-        self._conn = None
+        self.host = (
+            self._node.declare_parameter('host', '0.0.0.0').get_parameter_value().string_value
+        )
+        self.port = self._node.declare_parameter('port', 8765).get_parameter_value().integer_value
+        self.rate_hz = (
+            self._node.declare_parameter('rate_hz', 5.0).get_parameter_value().double_value
+        )
+        self._conn: socket.socket | None = None
         # Guards self._conn and serializes sends from the state and command
         # threads.
         self._lock = threading.Lock()
 
-    def serve(self):
+    def serve(self) -> None:
         """Accept visualizer connections until ROS shuts down (Ctrl-C)."""
         server = socket.create_server((self.host, self.port))
         # Wake up periodically to notice shutdown.
         server.settimeout(1.0)
         threading.Thread(target=self._stream_state, daemon=True).start()
-        self._log.info(
-            f'Listening on {self.host}:{self.port}, state at {self.rate_hz} Hz')
+        self._log.info(f'Listening on {self.host}:{self.port}, state at {self.rate_hz} Hz')
         while self._node.context.ok():
             try:
                 conn, address = server.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             conn.settimeout(SEND_TIMEOUT)
@@ -81,11 +87,10 @@ class BridgeDrone(Drone):
                 if self._conn is not None:
                     self._conn.close()
                 self._conn = conn
-            threading.Thread(
-                target=self._read_commands, args=(conn,), daemon=True).start()
+            threading.Thread(target=self._read_commands, args=(conn,), daemon=True).start()
         server.close()
 
-    def state(self):
+    def state(self) -> dict[str, Any]:
         """Latest vehicle and core state as a JSON-ready dict."""
         status = self._status
         local = self._local_position
@@ -93,24 +98,22 @@ class BridgeDrone(Drone):
         core = self._core_status
         return {
             'type': 'state',
-            'armed': None if status is None
+            'armed': None
+            if status is None
             else status.arming_state == VehicleStatus.ARMING_STATE_ARMED,
-            'mode': None if status is None
+            'mode': None
+            if status is None
             else NAV_STATES.get(status.nav_state, str(status.nav_state)),
             'landed': None if land is None else land.landed,
-            'position': None if local is None
-            else _rounded([local.x, local.y, local.z]),
-            'velocity': None if local is None
-            else _rounded([local.vx, local.vy, local.vz]),
+            'position': None if local is None else _rounded([local.x, local.y, local.z]),
+            'velocity': None if local is None else _rounded([local.vx, local.vy, local.vz]),
             'heading': None if local is None else _rounded([local.heading])[0],
-            'core_state': None if core is None
-            else CORE_STATES.get(core.state, str(core.state)),
+            'core_state': None if core is None else CORE_STATES.get(core.state, str(core.state)),
             'lease_holder': None if core is None else core.lease_holder,
-            'target': None if core is None
-            else _rounded(core.target_position),
+            'target': None if core is None else _rounded(core.target_position),
         }
 
-    def _stream_state(self):
+    def _stream_state(self) -> None:
         while True:
             try:
                 self._send(self.state())
@@ -118,7 +121,7 @@ class BridgeDrone(Drone):
                 self._log.error(f'Failed to send state: {error}')
             time.sleep(1.0 / self.rate_hz)
 
-    def _send(self, message):
+    def _send(self, message: dict[str, Any]) -> None:
         line = json.dumps(message, separators=(',', ':')) + '\n'
         with self._lock:
             if self._conn is None:
@@ -130,12 +133,12 @@ class BridgeDrone(Drone):
                 self._conn.close()
                 self._conn = None
 
-    def _read_commands(self, conn):
+    def _read_commands(self, conn: socket.socket) -> None:
         buffer = b''
         while True:
             try:
                 data = conn.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -151,8 +154,8 @@ class BridgeDrone(Drone):
                 conn.close()
                 self._conn = None
 
-    def _run_command(self, line):
-        result = {'type': 'result', 'id': None, 'ok': False, 'error': None}
+    def _run_command(self, line: bytes) -> None:
+        result: dict[str, Any] = {'type': 'result', 'id': None, 'ok': False, 'error': None}
         try:
             message = json.loads(line)
             result['id'] = message.get('id')
@@ -169,13 +172,13 @@ class BridgeDrone(Drone):
         self._send(result)
 
 
-def _rounded(values):
+def _rounded(values: Iterable[SupportsFloat]) -> list[float | None]:
     """Round to centimetres; NaN (invalid in JSON) becomes None."""
     # float() also converts numpy float32 from fixed-size message arrays.
     return [round(float(v), 2) if math.isfinite(v) else None for v in values]
 
 
-def main():
+def main() -> None:
     bridge = BridgeDrone()
     try:
         bridge.serve()

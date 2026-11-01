@@ -1,0 +1,29 @@
+# Needs compile_commands.json, which ament CMake packages here export into
+# their colcon build directory. Run through scripts/lint.
+# Disabled: ROS callback idioms (SharedPtr by value, const in declarations,
+# std::bind) and optional access guarded by helpers or gtest assertions, which
+# the check cannot follow.
+Checks: >
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
+  clang-analyzer-*,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-avoid-bind,
+  performance-*,
+  -performance-unnecessary-value-param,
+  readability-*,
+  -readability-avoid-const-params-in-decls,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix,
+  -readability-function-cognitive-complexity
+WarningsAsErrors: '*'
+# Only this workspace's headers; generated and system headers are skipped.
+HeaderFilterRegex: '.*/uas_ws/src/[^/]+/include/.*'
+FormatStyle: file

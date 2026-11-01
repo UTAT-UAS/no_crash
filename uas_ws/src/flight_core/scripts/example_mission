@@ -4,7 +4,7 @@
 from flight_core.client import Drone
 
 
-def main():
+def main() -> None:
     with Drone('example_mission') as drone:
         drone.takeoff(5.0)
         x, y, z = drone.position

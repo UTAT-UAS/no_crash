@@ -36,7 +36,8 @@ GotoSetpoint goto_at(const VehicleLocalPosition & position)
 std::string validate_trajectory(const flight_core_interfaces::srv::Trajectory::Request & request)
 {
   for (int axis = 0; axis < 3; ++axis) {
-    if (!std::isfinite(request.position[axis]) && !std::isfinite(request.velocity[axis]) &&
+    if (
+      !std::isfinite(request.position[axis]) && !std::isfinite(request.velocity[axis]) &&
       !std::isfinite(request.acceleration[axis]))
     {
       return "Axis " + std::to_string(axis) + " needs a finite position, velocity or acceleration";
@@ -66,8 +67,8 @@ VehicleCommand make_vehicle_command(uint32_t command, float param1, float param2
 
 const char * state_name(uint8_t state)
 {
-  static constexpr const char * names[] = {"HOLD", "GOTO", "TRAJECTORY"};
-  return state < 3 ? names[state] : "UNKNOWN";
+  static constexpr std::array<const char *, 3> names{"HOLD", "GOTO", "TRAJECTORY"};
+  return state < names.size() ? names[state] : "UNKNOWN";
 }
 
 }  // namespace
@@ -90,18 +91,17 @@ FlightCoreNode::FlightCoreNode()
   const auto px4_qos = rclcpp::SensorDataQoS();
   status_sub_ = create_subscription<px4_msgs::msg::VehicleStatus>(
     "/fmu/out/vehicle_status_v1", px4_qos,
-    [this](px4_msgs::msg::VehicleStatus::SharedPtr msg) {status_ = *msg;});
+    [this](px4_msgs::msg::VehicleStatus::SharedPtr msg) { status_ = *msg; });
   local_position_sub_ = create_subscription<px4_msgs::msg::VehicleLocalPosition>(
     "/fmu/out/vehicle_local_position_v1", px4_qos,
-    [this](px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {local_position_ = *msg;});
+    [this](px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) { local_position_ = *msg; });
   command_ack_sub_ = create_subscription<VehicleCommandAck>(
-    "/fmu/out/vehicle_command_ack", px4_qos,
-    [this](VehicleCommandAck::SharedPtr msg) {
-      if (msg->result != VehicleCommandAck::VEHICLE_CMD_RESULT_ACCEPTED &&
-      msg->result != VehicleCommandAck::VEHICLE_CMD_RESULT_IN_PROGRESS)
+    "/fmu/out/vehicle_command_ack", px4_qos, [this](VehicleCommandAck::SharedPtr msg) {
+      if (
+        msg->result != VehicleCommandAck::VEHICLE_CMD_RESULT_ACCEPTED &&
+        msg->result != VehicleCommandAck::VEHICLE_CMD_RESULT_IN_PROGRESS)
       {
-        RCLCPP_WARN(
-          get_logger(), "PX4 rejected command %u (result %u)", msg->command, msg->result);
+        RCLCPP_WARN(get_logger(), "PX4 rejected command %u (result %u)", msg->command, msg->result);
       }
     });
 
@@ -122,9 +122,10 @@ FlightCoreNode::FlightCoreNode()
   core_command_srv_ = create_service<CoreCommand>(
     "/flight_core/in/core_command", std::bind(&FlightCoreNode::on_core_command, this, _1, _2));
   vehicle_command_srv_ = create_service<CoreVehicleCommand>(
-    "/flight_core/in/vehicle_command", std::bind(&FlightCoreNode::on_vehicle_command, this, _1, _2));
-  goto_srv_ = create_service<Goto>(
-    "/flight_core/in/goto", std::bind(&FlightCoreNode::on_goto, this, _1, _2));
+    "/flight_core/in/vehicle_command",
+    std::bind(&FlightCoreNode::on_vehicle_command, this, _1, _2));
+  goto_srv_ =
+    create_service<Goto>("/flight_core/in/goto", std::bind(&FlightCoreNode::on_goto, this, _1, _2));
   trajectory_srv_ = create_service<Trajectory>(
     "/flight_core/in/trajectory", std::bind(&FlightCoreNode::on_trajectory, this, _1, _2));
 
@@ -188,6 +189,8 @@ void FlightCoreNode::on_timer()
       trajectory_setpoint_.timestamp = now;
       trajectory_pub_->publish(trajectory_setpoint_);
       break;
+    default:
+      break;
   }
 }
 
@@ -217,7 +220,7 @@ void FlightCoreNode::on_release(
 }
 
 void FlightCoreNode::on_reset(
-  const ResetControl::Request::SharedPtr, ResetControl::Response::SharedPtr response)
+  const ResetControl::Request::SharedPtr /*request*/, ResetControl::Response::SharedPtr response)
 {
   const std::string holder = lease_.holder_name();
   lease_.reset();
@@ -383,6 +386,8 @@ std::string FlightCoreNode::set_state(uint8_t state)
       trajectory_setpoint_.yaw = local_position_->heading;
       trajectory_setpoint_.yawspeed = NAN;
       break;
+    default:
+      break;
   }
   if (state != state_) {
     RCLCPP_INFO(get_logger(), "Core state %s -> %s.", state_name(state_), state_name(state));
@@ -412,6 +417,8 @@ std::array<float, 3> FlightCoreNode::target_position() const
       return goto_setpoint_.position;
     case CoreCommand::Request::TRAJECTORY:
       return trajectory_setpoint_.position;
+    default:
+      break;
   }
   const float nan = std::numeric_limits<float>::quiet_NaN();
   return {nan, nan, nan};

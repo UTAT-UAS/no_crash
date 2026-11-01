@@ -1,0 +1,19 @@
+# ROS 2 Python style: 99 columns, single quotes, imports sorted together.
+line-length = 99
+extend-include = ["src/flight_core/scripts/example_mission"]
+extend-exclude = ["src/px4_msgs"]
+
+[format]
+quote-style = "single"
+# Keep hand-aligned examples in READMEs.
+exclude = ["*.md"]
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ANN"]
+# Any is allowed for JSON values and rclpy's untyped service responses.
+ignore = ["ANN401"]
+
+[lint.isort]
+force-sort-within-sections = true
+known-first-party = ["flight_core", "flight_core_interfaces", "flight_visualizer_bridge"]
+known-third-party = ["px4_msgs"]
