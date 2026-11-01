@@ -59,8 +59,8 @@ The backend relays these to browsers as proto3 JSON
 
 ```bash
 colcon build --base-paths uas_ws/src --packages-select flight_core flight_visualizer_bridge --symlink-install
-scripts/sitl start
-ros2 run flight_visualizer_bridge flight_visualizer_bridge
+scripts/sim sitl start --no-gui
+scripts/sim viz start --no-frontend   # or run the bridge alone with --no-backend
 ```
 
 Then connect with the backend, or with a raw socket sending length-prefixed
