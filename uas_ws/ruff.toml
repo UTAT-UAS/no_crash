@@ -1,7 +1,7 @@
 # ROS 2 Python style: 99 columns, single quotes, imports sorted together.
 line-length = 99
 extend-include = ["src/flight_core/scripts/example_mission"]
-extend-exclude = ["src/px4_msgs"]
+extend-exclude = ["src/px4_msgs", "*_pb2.py"]
 
 [format]
 quote-style = "single"
