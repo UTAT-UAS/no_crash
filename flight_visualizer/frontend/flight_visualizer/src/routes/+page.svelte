@@ -114,6 +114,7 @@ position (m)   {formatVector(vehicle.position)}
 velocity (m/s) {formatVector(vehicle.velocity)}
 heading (rad)  {format(vehicle.heading)}
 core state     {vehicle.coreState === undefined ? '—' : CoreStateKind[vehicle.coreState]}
+core mode      {vehicle.simMode === undefined ? '—' : vehicle.simMode ? 'sim' : 'real'}
 lease holder   {vehicle.leaseHolder === undefined ? '—' : vehicle.leaseHolder || 'none'}
 target (m)     {formatVector(vehicle.target)}</pre>
 	<PositionMap position={vehicle.position} heading={vehicle.heading} target={vehicle.target} />

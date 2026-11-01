@@ -164,6 +164,7 @@ void FlightCoreNode::on_timer()
 
   flight_core_interfaces::msg::CoreState core_state;
   core_state.state = state_;
+  core_state.sim_mode = sim_mode_;
   core_state.lease_holder = lease_.holder_name();
   core_state.target_position = target_position();
   core_state_pub_->publish(core_state);

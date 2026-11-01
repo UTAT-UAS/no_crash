@@ -37,6 +37,9 @@ message State {
   optional string lease_holder = 8;
   // CoreState.target_position, the current core state's setpoint.
   Vector3 target = 9;
+  // CoreState.sim_mode: true when flight_core runs with mode:=sim (arming
+  // allowed), false in real mode.
+  optional bool sim_mode = 10;
 }
 
 // Outcome of one command.

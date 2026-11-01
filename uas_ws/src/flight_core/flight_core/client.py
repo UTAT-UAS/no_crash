@@ -140,9 +140,13 @@ class Drone:
     def acquire(self, timeout: float = 10.0) -> None:
         """Take the control lease once PX4 state is being received."""
         self.wait_until(
-            lambda: self._status is not None and self._local_position is not None,
+            lambda: (
+                self._status is not None
+                and self._local_position is not None
+                and self._core_status is not None
+            ),
             timeout,
-            'PX4 vehicle status and local position',
+            'PX4 vehicle status and local position and flight_core state',
         )
         self._log.info(f'Requesting control as {self.name!r}')
         request = AcquireControl.Request(client_name=self.name)
@@ -174,8 +178,23 @@ class Drone:
 
     # Vehicle commands
 
-    def arm(self, timeout: float = 5.0) -> None:
-        """Arm and wait until PX4 reports armed."""
+    def arm(self, timeout: float = 5.0, pilot_timeout: float = 60.0) -> None:
+        """Arm and wait until PX4 reports armed.
+
+        In real mode flight_core rejects arming, so instead wait up to
+        `pilot_timeout` seconds for the pilot to arm from the RC or GCS. With
+        `pilot_timeout` <= 0, raise ControlError at once if not armed.
+        """
+        if self.is_armed:
+            self._log.info('Already armed')
+            return
+        if not self.is_sim:
+            if pilot_timeout <= 0:
+                raise ControlError('Arming is disabled in real mode; arm from the RC or GCS')
+            self._log.info(f'Real mode: waiting up to {pilot_timeout} s for the pilot to arm')
+            self.wait_until(lambda: self.is_armed, pilot_timeout, 'the pilot to arm')
+            self._log.info('Armed by the pilot')
+            return
         self._log.info('Requesting arm')
         self._send_vehicle_command(CoreVehicleCommand.Request.ARM)
         self.wait_until(lambda: self.is_armed, timeout, 'arming')
@@ -230,7 +249,7 @@ class Drone:
     def takeoff(self, altitude: float, timeout: float = 30.0, tolerance: float = 0.3) -> None:
         """Hold, enter offboard, arm if needed, and climb `altitude` metres.
 
-        In real mode flight_core rejects arming, so the pilot must arm first.
+        In real mode, waits for the pilot to arm (see `arm()`).
         """
         self._log.info(f'Taking off {altitude} m')
         self.hold()
@@ -338,8 +357,13 @@ class Drone:
 
     @property
     def core_state(self) -> CoreState:
-        """Latest flight_core CoreState (state and lease holder)."""
+        """Latest flight_core CoreState (state, mode and lease holder)."""
         return self._require(self._core_status, 'flight_core state')
+
+    @property
+    def is_sim(self) -> bool:
+        """Whether flight_core runs in sim mode (arming allowed)."""
+        return self.core_state.sim_mode
 
     @property
     def status(self) -> VehicleStatus:

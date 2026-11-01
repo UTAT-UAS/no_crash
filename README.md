@@ -84,7 +84,7 @@ step needs its own terminal; source the overlay in every new ROS terminal with
    `flight_core` in sim mode.
 
    ```bash
-   scripts/sim sitl start      # --no-gui for headless
+   scripts/sim sitl start      # --no-gui for headless; `scripts/sim sitl gui` opens it later
    scripts/sim sitl status     # Components and log paths
    ```
 
