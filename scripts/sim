@@ -31,7 +31,8 @@
 # Environment:
 #   PX4_DIR          PX4-Autopilot checkout (default ~/build/PX4-Autopilot)
 #   PX4_SIM_MODEL    Simulated vehicle (default gz_x500)
-#   PX4_GZ_WORLD     Gazebo world in PX4's worlds directory (default default)
+#   PX4_GZ_WORLD     Gazebo world (default default): sim/worlds/<world>.sdf in
+#                    this repository, else one in PX4's worlds directory
 #   SIM_STATE_DIR    PIDs, logs and PX4 working directory, in a subdirectory
 #                    per group (default ${TMPDIR:-/tmp}/no_crash_sim)
 #   SIM_TIMEOUT      Seconds to wait for readiness (default 120)
@@ -56,6 +57,8 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SITL_BUILD=$PX4_DIR/build/px4_sitl_default
 BACKEND_DIR=$REPO_ROOT/flight_visualizer/backend
 FRONTEND_DIR=$REPO_ROOT/flight_visualizer/frontend/flight_visualizer
+# Project worlds, which take precedence over PX4's of the same name.
+WORLDS_DIR=$REPO_ROOT/sim/worlds
 # Gazebo model directory; spawned as <model>_<n>, see spawn_model.
 MODEL=${PX4_SIM_MODEL#gz_}
 # Components per group, in stop order.
@@ -194,6 +197,9 @@ sitl_start() {
     [[ -x $SITL_BUILD/bin/px4 ]] || die "no SITL build at $SITL_BUILD (set PX4_DIR or run 'make px4_sitl')"
     require_stopped
     sitl_env
+    local world_file=$WORLDS_DIR/$PX4_GZ_WORLD.sdf
+    [[ -f $world_file ]] || world_file=$PX4_GZ_WORLDS/$PX4_GZ_WORLD.sdf
+    [[ -f $world_file ]] || die "no world '$PX4_GZ_WORLD' in $WORLDS_DIR or $PX4_GZ_WORLDS"
     command -v MicroXRCEAgent > /dev/null || die "MicroXRCEAgent not found on PATH"
     (( enabled[core] )) && require_ros_package flight_core
 
@@ -204,8 +210,8 @@ sitl_start() {
 
     echo "Starting MicroXRCEAgent on UDP $XRCE_PORT"
     spawn agent MicroXRCEAgent udp4 -p "$XRCE_PORT"
-    echo "Starting Gazebo (world $PX4_GZ_WORLD)"
-    spawn gz gz sim --verbose=1 -r -s "$PX4_GZ_WORLDS/$PX4_GZ_WORLD.sdf"
+    echo "Starting Gazebo (world $world_file)"
+    spawn gz gz sim --verbose=1 -r -s "$world_file"
     wait_until gz "the Gazebo world" world_ready
     (( enabled[gui] )) && spawn gui gz sim -g
     spawn_model "${MODEL}_0"

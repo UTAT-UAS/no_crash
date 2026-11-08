@@ -66,7 +66,7 @@ next `start`; `sitl restart` starts the `px4` and `core` logs afresh.
 |---|---|
 | `PX4_DIR` | `~/build/PX4-Autopilot` |
 | `PX4_SIM_MODEL` | `gz_x500` |
-| `PX4_GZ_WORLD` | `default` (a world in PX4's `Tools/simulation/gz/worlds`) |
+| `PX4_GZ_WORLD` | `default`: a world in [`sim/worlds`](../../sim/worlds), else in PX4's `Tools/simulation/gz/worlds` |
 | `SIM_STATE_DIR` | `${TMPDIR:-/tmp}/no_crash_sim` |
 | `SIM_TIMEOUT` | `120` seconds to wait for readiness |
 | `XRCE_PORT` | `8888` |

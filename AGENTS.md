@@ -10,6 +10,7 @@ exist yet.
 - `flight_visualizer/frontend/`: Svelte frontend managed with Bun.
 - `flight_visualizer/backend/`: Python backend with its own dependencies.
 - `hardware_manager/`: Bash and Python hardware scripts.
+- `sim/`: Gazebo worlds for `scripts/sim`.
 
 Keep application source and dependency manifests in their owning project.
 Build ROS packages with colcon from the monorepo root so the install overlay
