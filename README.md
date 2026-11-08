@@ -124,6 +124,7 @@ the vehicle), and the bridge. Point the backend at the drone with
 - [`flight_visualizer/frontend/`](flight_visualizer/frontend/flight_visualizer/README.md): Svelte frontend using Bun.
 - [`flight_visualizer/backend/`](flight_visualizer/backend/README.md): Python backend with its own environment and dependencies.
 - [`hardware_manager/`](hardware_manager/README.md): Bash and Python hardware scripts.
+- [`sim/`](sim/README.md): Gazebo worlds used by `scripts/sim`.
 
 The ROS workspace contains `flight_core`, a Python and C++ package for the PX4
 offboard flight controller, and `flight_visualizer_bridge`, which links it to
