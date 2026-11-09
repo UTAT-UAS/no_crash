@@ -125,7 +125,7 @@ class FrameVisualizer(Node):
                         * 255.0
                         / (max_val - min_val)
                     ).astype(np.uint8)
-                    depth_display[depth_display != 0] = 1
+     #               depth_display[depth_display != 0] = 1
                     depth_display[depth_display == 0] = 255
 
             depth_display = cv2.applyColorMap(
