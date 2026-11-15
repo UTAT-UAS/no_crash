@@ -12,7 +12,7 @@ import numpy as np
 
 
 DEPTH_TOPIC = "/target_detloc/internal/depth"
-COLOR_TOPIC = "/target_detloc/internal/color"
+COLOR_TOPIC = "/target_detloc/internal/mask"
 
 
 class FrameVisualizer(Node):
@@ -104,7 +104,6 @@ class FrameVisualizer(Node):
         if self.depth_image is not None:
 
             depth = self.depth_image
-            print(depth)
 
             # Convert 16-bit depth into 8-bit visualization
             # Original depth data remains unchanged.

@@ -16,11 +16,25 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
+set(onnxruntime_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/YOLOs-CPP/onnxruntime-linux-x64-1.20.1/lib/cmake/onnxruntime"
+)
+
+find_package(onnxruntime REQUIRED)
 
 add_executable(frame_mux src/frame_mux.cpp)
+add_executable(detect src/detect.cpp)
 
 target_include_directories(frame_mux PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+
+target_include_directories(detect PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/YOLOs-CPP/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/YOLOs-CPP/include/yolos/core>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/YOLOs-CPP/onnxruntime-linux-x64-1.20.1/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
@@ -32,7 +46,27 @@ ament_target_dependencies(frame_mux
   OpenCV
 )
 
+ament_target_dependencies(detect 
+  rclcpp 
+  sensor_msgs 
+  std_msgs 
+  cv_bridge 
+  OpenCV
+)
+
+set_target_properties(onnxruntime::onnxruntime PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/YOLOs-CPP/onnxruntime-linux-x64-1.20.1/include"
+)
+
+target_link_libraries(detect
+  onnxruntime::onnxruntime
+)
+
 install(TARGETS frame_mux
+  DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS detect
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
