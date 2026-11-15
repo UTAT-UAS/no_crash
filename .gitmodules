@@ -1,6 +1,6 @@
 [submodule "uas_ws/src/px4_msgs"]
 	path = uas_ws/src/px4_msgs
 	url = https://github.com/PX4/px4_msgs.git
-[submodule "uas_ws/src/--depth=1"]
-	path = uas_ws/src/YOLOs-CPP
+[submodule "uas_ws/src/target_detloc/YOLOs-CPP"]
+	path = uas_ws/src/target_detloc/YOLOs-CPP
 	url = https://github.com/Geekgineer/YOLOs-CPP.git
