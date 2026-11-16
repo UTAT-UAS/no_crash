@@ -1,7 +1,7 @@
 # Dependency Installation
 
 figure it out yourself!! :)
-![Orbbec ROS2 Wrapper](https://orbbec.github.io/OrbbecSDK_ROS2/en/index.html)
+[Orbbec ROS2 Wrapper](https://orbbec.github.io/OrbbecSDK_ROS2/en/index.html)
 
 compose.yaml
 ```
@@ -53,9 +53,23 @@ Start the frame multiplexer:
 ros2 run target_detloc frame_mux
 ```
 
+## Detector
+
+CMakeLists.txt is for two platforms: ONNX runtime (for CPU machines) and TensorRT (for Jetson).
+```
+colcon build --base-paths uas_ws/src --symlink-install --cmake-args -DBACKEND=TRT
+colcon build --base-paths uas_ws/src --symlink-install --cmake-args -DBACKEND=ONNX
+```
+
+Start the detector:
+
+```bash
+ros2 run target_detloc detect
+```
 ## Visualizer
 
 Start the visualizer:
+
 
 ```bash
 python visualization.py
