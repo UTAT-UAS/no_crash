@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'land_on_pad = target_retrieval.land_on_pad:main',
+            'pickup = target_retrieval.pickup:main',
         ],
     },
 )
