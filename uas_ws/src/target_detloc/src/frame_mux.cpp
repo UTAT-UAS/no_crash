@@ -21,19 +21,19 @@ using std::placeholders::_1;
 #define DEPTH_FRAME_OUT_TOPIC "/target_detloc/internal/depth"
 #define COLOR_FRAME_OUT_TOPIC "/target_detloc/internal/color"
 
-class Detect : public rclcpp::Node {
+class Visualize : public rclcpp::Node {
 public:
-  Detect()
+  Visualize()
     : Node("frame_muxer") {
     depth_publisher_ = this->create_publisher<sensor_msgs::msg::Image>(DEPTH_FRAME_OUT_TOPIC, 10);
 
     depth_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
-      DEPTH_FRAME_SOURCE_TOPIC, 10, std::bind(&Detect::depth_topic_callback, this, _1));
+      DEPTH_FRAME_SOURCE_TOPIC, 10, std::bind(&Visualize::depth_topic_callback, this, _1));
 
     mask_publisher_ = this->create_publisher<sensor_msgs::msg::Image>(COLOR_FRAME_OUT_TOPIC, 10);
 
     color_subscription = this->create_subscription<sensor_msgs::msg::Image>(
-      COLOR_FRAME_SOURCE_TOPIC, 10, std::bind(&Detect::color_topic_callback, this, _1));
+      COLOR_FRAME_SOURCE_TOPIC, 10, std::bind(&Visualize::raw_frame_topic_callback, this, _1));
   }
 
 private:
@@ -74,7 +74,7 @@ private:
       RCLCPP_ERROR(this->get_logger(), "Depth conversion failed: %s", e.what());
     }
   }
-  void color_topic_callback(const sensor_msgs::msg::Image::ConstSharedPtr frame_msg) const {
+  void raw_frame_topic_callback(const sensor_msgs::msg::Image::ConstSharedPtr frame_msg) const {
     try {
       RCLCPP_DEBUG(this->get_logger(), "Color input encoding: '%s'", frame_msg->encoding.c_str());
 
@@ -101,7 +101,7 @@ private:
 
 int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<Detect>());
+  rclcpp::spin(std::make_shared<Visualize>());
   rclcpp::shutdown();
   return 0;
 }

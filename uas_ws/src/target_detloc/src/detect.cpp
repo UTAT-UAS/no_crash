@@ -6,6 +6,15 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
+#include "types.h"
+
+#include "target_detloc/msg/bounding_box.hpp"
+#include "target_detloc/msg/segmentation.hpp"
+#include "target_detloc/msg/segmentation_array.hpp"
+
+using target_detloc::msg::BoundingBox;
+using target_detloc::msg::SegmentationArray;
+
 using std::placeholders::_1;
 
 #define IS_JETSON 0
@@ -22,7 +31,7 @@ using std::placeholders::_1;
 #endif
 
 #define COLOR_FRAME_TOPIC "/target_detloc/internal/color"
-#define MASK_FRAME_TOPIC "/target_detloc/internal/mask"
+#define SEG_RESULT_TOPIC "/target_detloc/internal/segmentation_result"
 
 class Detect : public rclcpp::Node {
 public:
@@ -36,7 +45,7 @@ public:
                                                                   true);
 #endif
 
-    mask_publisher_ = this->create_publisher<sensor_msgs::msg::Image>(MASK_FRAME_TOPIC, 10);
+    seg_result_publisher_ = this->create_publisher<SegmentationArray>(SEG_RESULT_TOPIC, 10);
 
     color_subscription = this->create_subscription<sensor_msgs::msg::Image>(
       COLOR_FRAME_TOPIC, 10, std::bind(&Detect::color_topic_callback, this, _1));
@@ -55,18 +64,42 @@ private:
 #if IS_JETSON
       auto converted = cv_bridge::toCvCopy(frame_msg, "rgb8");
       std::vector<Segmentation> segments = trt_detector->detect(converted->image, 0.25f, 0.45f);
-      std::vector<std::string> labels(80);
-      auto image = visualizeSegments(converted->image, segments, labels, 0.4);
-      auto labeled = cv_bridge::CvImage(frame_msg->header, "rgb8", image);
-      mask_publisher_->publish(*labeled.toImageMsg());
 
 #else
       auto input = cv_bridge::toCvCopy(frame_msg, "rgb8");
       auto segments = yolo_detector->segment(input->image);
-      yolo_detector->drawSegmentations(input->image, segments, 0.5f);
-
-      mask_publisher_->publish(*input->toImageMsg());
 #endif
+
+      SegmentationArray out_msg;
+      out_msg.header.stamp = this->now();
+      out_msg.detections.reserve(segments.size());
+      for (const auto& item : segments) {
+        target_detloc::msg::Segmentation ros_seg_item;
+        ros_seg_item.box.x = item.box.x;
+        ros_seg_item.box.y = item.box.y;
+        ros_seg_item.box.width = item.box.width;
+        ros_seg_item.box.height = item.box.height;
+        ros_seg_item.conf = item.conf;
+        ros_seg_item.class_id = item.classId;
+
+        auto img_msg = std::make_shared<sensor_msgs::msg::Image>();
+        img_msg->header = frame_msg->header;
+        img_msg->height = static_cast<uint32_t>(item.mask.rows);
+        img_msg->width = static_cast<uint32_t>(item.mask.cols);
+        img_msg->encoding = "mono8";
+        img_msg->is_bigendian = 0;
+        img_msg->step = static_cast<uint32_t>(item.mask.step);
+
+        size_t size_bytes = item.mask.step * static_cast<size_t>(item.mask.rows);
+        img_msg->data.resize(size_bytes);
+        std::memcpy(img_msg->data.data(), item.mask.data, size_bytes);
+
+        ros_seg_item.mask = *img_msg;
+
+        out_msg.detections.push_back(std::move(ros_seg_item));
+      }
+
+      seg_result_publisher_->publish(out_msg);
 
     } catch (const cv_bridge::Exception& e) {
       RCLCPP_ERROR(this->get_logger(), "Object detection failed: %s", e.what());
@@ -74,7 +107,7 @@ private:
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_subscription; // raw frame in
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr mask_publisher_; // converted frame out
+  rclcpp::Publisher<SegmentationArray>::SharedPtr seg_result_publisher_;       // result out
 #if IS_JETSON
   std::unique_ptr<YOLOSegmentationDetector> trt_detector;
 #else

@@ -1,0 +1,2 @@
+bool show_detection
+bool show_depth_instead_of_color

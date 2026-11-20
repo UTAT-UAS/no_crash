@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(target_detloc)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,6 +34,26 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "${CMAKE_CURRENT_SOURCE_DIR}:msg/BoundingBox.msg"
+  "${CMAKE_CURRENT_SOURCE_DIR}:msg/Segmentation.msg"
+  "${CMAKE_CURRENT_SOURCE_DIR}:msg/SegmentationArray.msg"
+  "${CMAKE_CURRENT_SOURCE_DIR}:msg/OverlayState.msg"
+  "${CMAKE_CURRENT_SOURCE_DIR}:msg/LocalizationResult.msg"
+
+  "${CMAKE_CURRENT_SOURCE_DIR}:srv/SetOverlayState.srv"
+  "${CMAKE_CURRENT_SOURCE_DIR}:srv/GetOverlayState.srv"
+  DEPENDENCIES
+    geometry_msgs
+    sensor_msgs
+)
+rosidl_get_typesupport_target(cpp_typesupport_target
+   ${PROJECT_NAME} rosidl_typesupport_cpp)
+
+
 
 # ---- Common: frame_mux ----
 add_executable(frame_mux src/frame_mux.cpp)
@@ -43,7 +63,50 @@ target_include_directories(frame_mux PUBLIC
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
+include_directories(
+  ${CMAKE_SOURCE_DIR}/../../../install/target_detloc/include/target_detloc
+)
+
+target_link_libraries(frame_mux "${cpp_typesupport_target}")
+
 ament_target_dependencies(frame_mux
+  rclcpp
+  sensor_msgs
+  std_msgs
+  cv_bridge
+  OpenCV
+)
+
+
+# --- overlay node ---
+
+add_executable(overlay_state src/overlay_state.cpp)
+
+target_include_directories(overlay_state PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+target_link_libraries(overlay_state "${cpp_typesupport_target}")
+
+ament_target_dependencies(overlay_state
+  rclcpp
+  sensor_msgs
+  std_msgs
+  cv_bridge
+  OpenCV
+)
+
+# --- visualization node ---
+
+add_executable(visualize src/visualize.cpp src/utils.cpp)
+
+target_include_directories(visualize PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+target_link_libraries(visualize "${cpp_typesupport_target}")
+
+ament_target_dependencies(visualize 
   rclcpp
   sensor_msgs
   std_msgs
@@ -89,6 +152,7 @@ if(BACKEND STREQUAL "ONNX")
     onnxruntime::onnxruntime
   )
 
+
 elseif(BACKEND STREQUAL "TRT")
 
   # ---- TensorRT backend ----
@@ -119,6 +183,7 @@ elseif(BACKEND STREQUAL "TRT")
   )
 
 endif()
+target_link_libraries(detect "${cpp_typesupport_target}")
 
 # ---- Install ----
 install(TARGETS frame_mux
@@ -127,11 +192,18 @@ install(TARGETS frame_mux
 install(TARGETS detect
   DESTINATION lib/${PROJECT_NAME})
 
+install(TARGETS overlay_state
+  DESTINATION lib/${PROJECT_NAME})
+install(TARGETS visualize
+  DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

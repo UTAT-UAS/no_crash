@@ -18,8 +18,8 @@ cv::Scalar getColor(int classId) {
  */
 cv::Mat visualizeSegments(const cv::Mat& inputImage,
                           const std::vector<Segmentation>& segments,
-                          const std::vector<std::string>& classNames = {},
-                          float maskAlpha = 0.4f) {
+                          const std::vector<std::string>& classNames,
+                          float maskAlpha) {
   cv::Mat outputImage = inputImage.clone();
   cv::Mat maskOverlay = inputImage.clone();
 
@@ -105,4 +105,31 @@ cv::Mat visualizeSegments(const cv::Mat& inputImage,
   }
 
   return outputImage;
+}
+
+cv::Mat depth_to_rgb8_viz(const cv::Mat& depth_16u, double min_mm, double max_mm) {
+  const cv::Mat valid_mask = (depth_16u > 0);
+  cv::Mat scaled_8u = cv::Mat::zeros(depth_16u.size(), CV_8UC1);
+
+  if (cv::countNonZero(valid_mask) > 0) {
+    cv::Mat clamped;
+    depth_16u.convertTo(clamped, CV_32F);
+    cv::min(clamped, static_cast<float>(max_mm), clamped);
+    cv::max(clamped, static_cast<float>(min_mm), clamped);
+
+    const double scale = 254.0 / (max_mm - min_mm);
+    const double shift = 1.0 - min_mm * scale;
+
+    cv::Mat norm_8u;
+    clamped.convertTo(norm_8u, CV_8UC1, scale, shift);
+    norm_8u.copyTo(scaled_8u, valid_mask);
+  }
+
+  cv::Mat color_bgr;
+  cv::applyColorMap(scaled_8u, color_bgr, cv::COLORMAP_TURBO);
+  color_bgr.setTo(cv::Scalar(0, 0, 0), ~valid_mask);
+
+  cv::Mat color_rgb;
+  cv::cvtColor(color_bgr, color_rgb, cv::COLOR_BGR2RGB);
+  return color_rgb;
 }
