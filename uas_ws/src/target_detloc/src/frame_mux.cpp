@@ -7,7 +7,7 @@
 #include "sensor_msgs/msg/image.hpp"
 using std::placeholders::_1;
 
-#define IS_SIMULATION 0
+#define IS_SIMULATION 1
 
 #if IS_SIMULATION
 #define DEPTH_FRAME_SOURCE_TOPIC "/depth_camera"

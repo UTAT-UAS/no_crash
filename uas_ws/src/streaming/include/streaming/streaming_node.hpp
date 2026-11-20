@@ -1,37 +1,23 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
+#include "streaming/video_streamer.hpp"
 
-#define COLOR_FRAME_TOPIC "/target_detloc/internal/color"
-#define MASK_FRAME_TOPIC "/target_detloc/internal/mask"
-#define DEPTH_FRAME_TOPIC "/target_detloc/internal/depth"
-
-class StreamingNode : public rclcpp::Node {
+// ROS side only: subscribes to an image topic and hands every frame to
+// VideoStreamer. All GStreamer logic lives in VideoStreamer.
+class StreamingNode : public rclcpp::Node
+{
 public:
-  StreamingNode()
-    : Node("streaming_node") {
-    color_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        COLOR_FRAME_TOPIC, rclcpp::SensorDataQoS(),
-        [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { on_color(msg); });
-
-    depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        DEPTH_FRAME_TOPIC, rclcpp::SensorDataQoS(),
-        [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { on_depth(msg); });
-
-    mask_sub_ = create_subscription<sensor_msgs::msg::Image>(
-        MASK_FRAME_TOPIC, rclcpp::SensorDataQoS(),
-        [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { on_mask(msg); });
-  }
+  StreamingNode();
 
 private:
-  void on_color(sensor_msgs::msg::Image::ConstSharedPtr msg);
-  void on_depth(sensor_msgs::msg::Image::ConstSharedPtr msg);
-  void on_mask(sensor_msgs::msg::Image::ConstSharedPtr msg);
+  void on_frame(sensor_msgs::msg::Image::ConstSharedPtr msg);
 
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr mask_sub_;
+  std::unique_ptr<VideoStreamer> streamer_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_;
+  rclcpp::TimerBase::SharedPtr poll_timer_;
 };
