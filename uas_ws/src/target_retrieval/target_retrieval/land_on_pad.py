@@ -11,8 +11,10 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 
-from flight_core.client import Drone
+from flight_core.client import ControlError, Drone
 from task2_interfaces.msg import TargetEstimate
+
+from pickup import Gripper
 
 TARGET_TOPIC = '/target_detloc/out/targets'
 TAKEOFF_ALTITUDE = 5.0  # [m] climb used when starting on the ground (sim testing)
@@ -22,6 +24,7 @@ SETTLE = 1.0  # [s] wait after each step so the next estimate comes from a level
 MAX_AGE = 0.5  # [s] pad estimates older than this are treated as lost
 FIRST_PAD_TIMEOUT = 30.0  # [s] wait for the first pad estimate
 LOST_PAD_TIMEOUT = 5.0  # [s] give up if the pad is lost this long during descent
+CLOSE_TIME = 1.5  # [s] time for the gripper to close. TODO: from mechanical
 
 
 class PadListener(Node):
@@ -90,19 +93,52 @@ def land_on_pad(drone: Drone, listener: PadListener) -> None:
 
     drone.land()
 
+def drop_it(drone: Drone, gripper: Gripper) -> bool:
+    '''
+    Assume on landing pad, then drop item.
+    Note: This currently assumes that we are using a separate function to land.
+    '''
+    if drone.is_landed:
+        drone._log.info('Attempting dropoff...')
+
+        gripper.open()
+        time.sleep(CLOSE_TIME)
+
+        holding = gripper.is_holding()
+        if not holding:
+            drone._log.info('Gripper not holding. Assuming dropoff successful.')
+            return True
+        else:
+            drone._log.warning('Gripper still holding, drop unsuccessful.')
+            return False
+    return False
+
+def run(drone: Drone, listener: PadListener, gripper: Gripper) -> None:
+    '''Land, wait on pad, then dropoff'''
+    land_on_pad(drone, listener)
+
+    drone._log.info('Waiting for touchdown confirmation...')
+    drone.wait_until(lambda: drone.is_landed, 30, 'landing touchdown')
+
+    if not drop_it(drone, gripper):
+        raise ControlError('Dropoff Failed')
+    drone._log.info('Dropoff Completed')
+
 
 def main() -> None:
     rclpy.init()
     listener = PadListener()
+    gripper = Gripper()
     executor = SingleThreadedExecutor()
     executor.add_node(listener)
+    executor.add_node(gripper)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
     try:
         # Leaving the with block (including on an error, e.g. pad lost)
         # holds position and releases control.
         with Drone('land_on_pad') as drone:
-            land_on_pad(drone, listener)
+            run(drone, listener, gripper)
     finally:
         executor.shutdown()
         listener.destroy_node()
